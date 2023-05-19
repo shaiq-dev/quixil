@@ -1,0 +1,30 @@
+# Object files
+*.o
+*.obj
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Libraries
+*.a
+*.lo
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Others
+.vscode
+test.qx
