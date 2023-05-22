@@ -7,10 +7,16 @@
 extern "C" {
 #endif
 
+#define MAX_TEMPLATE_INTERPOLATION_NESTING 8
+
 typedef struct {
     const char* start;
     const char* current;
     int line;
+
+    // Template String
+    int parens[MAX_TEMPLATE_INTERPOLATION_NESTING];
+    int num_parens;
 } Scanner;
 
 typedef enum {
@@ -38,6 +44,7 @@ typedef enum {
     // Literals
     TOKEN_IDENTIFIER,
     TOKEN_STRING,
+    TOKEN_INTEROP,
     TOKEN_NUMBER,
     // Keywords
     TOKEN_AND,

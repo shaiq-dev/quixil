@@ -7,13 +7,22 @@
 #define EMIT_RETURN() EMIT_BYTE(OP_RETURN)
 #define EMIT_BYTES(byte_1, byte_2) (EMIT_BYTE(byte_1), EMIT_BYTE(byte_2))
 #define EMIT_CONST(val) EMIT_BYTES(OP_CONSTANT, make_constant(p, val))
+#define CHECK_TYPE(_type) (p->cur.type == (_type))
+#define MATCH_TOKEN(_type) (CHECK_TYPE(_type) ? (advance(p), true) : false)
+#define CONST_IDENTIFIER(token) (make_constant(p, OBJECT_VAL(QxlObjectString_copy(p->vm_global_strings, token.start, token.length))))
+#define PARSER_VARIABLE(e) ({ consume(p, TOKEN_IDENTIFIER, (e)); CONST_IDENTIFIER(p->prev); })
+#define NAMED_VARIABLE() (EMIT_BYTES(OP_GET_GLOBAL, (uint8_t)CONST_IDENTIFIER(p->prev)))
 
-static void unary(Parser *p);
-static void grouping(Parser *p);
-static void binary(Parser *p);
-static void number(Parser *p);
-static void string(Parser *p);
-static void literal(Parser *p);
+static void unary(Parser *p, bool can_assign);
+static void grouping(Parser *p, bool can_assign);
+static void binary(Parser *p, bool can_assign);
+static void number(Parser *p, bool can_assign);
+static void template(Parser *p, bool can_assign);
+static void string(Parser *p, bool can_assign);
+static void literal(Parser *p, bool can_assign);
+static void variable(Parser *p, bool can_assign);
+static void statement(Parser *p);
+static void declaration(Parser *p);
 
 ParseRule rules[] = {
     [TOKEN_LEFT_PAREN]    = {grouping, NULL,   PREC_NONE},
@@ -35,8 +44,9 @@ ParseRule rules[] = {
     [TOKEN_GREATER_EQUAL] = {NULL,     binary, PREC_COMPARISON},
     [TOKEN_LESS]          = {NULL,     binary, PREC_COMPARISON},
     [TOKEN_LESS_EQUAL]    = {NULL,     binary, PREC_COMPARISON},
-    [TOKEN_IDENTIFIER]    = {NULL,     NULL,   PREC_NONE},
+    [TOKEN_IDENTIFIER]    = {variable, NULL,   PREC_NONE},
     [TOKEN_STRING]        = {string,   NULL,   PREC_NONE},
+    [TOKEN_INTEROP]       = {template, NULL,   PREC_NONE},
     [TOKEN_NUMBER]        = {number,   NULL,   PREC_NONE},
     [TOKEN_AND]           = {NULL,     NULL,   PREC_NONE},
     [TOKEN_CLASS]         = {NULL,     NULL,   PREC_NONE},
@@ -92,10 +102,7 @@ advance(Parser *p)
 
     for (;;) {
         p->cur = scanner_scan_token(p->s);
-        if (p->cur.type != TOKEN_ERROR) {
-            break;
-        }
-
+        if (p->cur.type != TOKEN_ERROR) break;
         PARSER_ERROR_AT_CUR(p->cur.start);
     }
 }
@@ -116,23 +123,28 @@ parse_precedence(Parser *p, Precedence prec) {
     advance(p);
     ParseFn prefix_rule = get_rule(p->prev.type)->prefix;
     if (prefix_rule == NULL) {
-        PARSER_ERROR("Expect expression.");
+        PARSER_ERROR("Expected expression.");
         return;
     }
 
-    prefix_rule(p);
+    bool can_assign = prec <= PREC_CONDITIONAL;
+    prefix_rule(p, can_assign);
 
     while (prec <= get_rule(p->cur.type)->precedence) {
         advance(p);
         ParseFn infix_rule = get_rule(p->prev.type)->infix;
-        infix_rule(p);
+        infix_rule(p, can_assign);
+    }
+
+    if (can_assign && MATCH_TOKEN(TOKEN_EQUAL)) {
+        PARSER_ERROR("Invalid assignment target.");
     }
 }
 
 static void 
 expression(Parser *p)
 {
-    parse_precedence(p, PREC_ASSIGNMENT);
+    parse_precedence(p, PREC_LOWEST);
 }
 
 static uint8_t 
@@ -148,28 +160,46 @@ make_constant(Parser *p, QxlValue value)
 }
 
 static void
-number(Parser *p)
+number(Parser *p, bool can_assign)
 {
     double value = strtod(p->prev.start, NULL);
     EMIT_CONST(NUMBER_VAL(value));
 }
 
 static void 
-string(Parser *p)
+template(Parser *p, bool can_assign)
 {
-    QxlObjectString *s = QxlObjectString_copy(p->prev.start + 1, p->prev.length - 2);
+    QxlObjectString *s = QxlObjectString_copy(p->vm_global_strings, "", 0);
+    EMIT_CONST(OBJECT_VAL(s));
+    do {
+        QxlObjectString *s = QxlObjectString_copy(p->vm_global_strings, p->prev.start + 1, p->prev.length - 3);
+        EMIT_CONST(OBJECT_VAL(s));
+        EMIT_BYTE(OP_ADD);
+        expression(p);
+        EMIT_BYTE(OP_ADD);
+
+    } while (MATCH_TOKEN(TOKEN_INTEROP));
+    consume(p, TOKEN_STRING, "Expected end of template string");
+    string(p, false);
+    EMIT_BYTE(OP_ADD);
+}
+
+static void 
+string(Parser *p, bool can_assign)
+{
+    QxlObjectString *s = QxlObjectString_copy(p->vm_global_strings, p->prev.start + 1, p->prev.length - 2);
     EMIT_CONST(OBJECT_VAL(s));
 }
 
 static void 
-grouping(Parser *p) 
+grouping(Parser *p, bool can_assign) 
 {
     expression(p);
     consume(p, TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
 }
 
 static void 
-unary(Parser *p) 
+unary(Parser *p, bool can_assign) 
 {
     TokenType op_type = p->prev.type;
 
@@ -185,7 +215,7 @@ unary(Parser *p)
 }
 
 static void 
-binary(Parser *p) 
+binary(Parser *p, bool can_assign) 
 {
     TokenType op_type = p->prev.type;
     ParseRule* rule = get_rule(op_type);
@@ -207,7 +237,7 @@ binary(Parser *p)
 }
 
 static void 
-literal(Parser *p) 
+literal(Parser *p, bool can_assign) 
 {
     switch (p->prev.type) {
         case TOKEN_FALSE:   EMIT_BYTE(OP_FALSE); break;
@@ -217,26 +247,134 @@ literal(Parser *p)
     }
 }
 
+static void
+named_variable(Parser *p, bool can_assign) {
+    uint8_t arg = CONST_IDENTIFIER(p->prev);
+
+    bool does_match = MATCH_TOKEN(TOKEN_EQUAL);
+
+    if (can_assign && does_match ) {
+        expression(p);
+        EMIT_BYTES(OP_SET_GLOBAL, arg);
+    } else {
+        EMIT_BYTES(OP_GET_GLOBAL, arg);
+    }
+}
+
+static void
+variable(Parser *p, bool can_assign)
+{
+    named_variable(p, can_assign);
+}
+
+static void 
+synchronize(Parser *p) 
+{
+    p->panic_mode = false;
+
+    while (p->cur.type != TOKEN_EOF) {
+        if (p->prev.type == TOKEN_SEMICOLON) return;
+        
+        switch (p->cur.type) {
+            case TOKEN_CLASS:
+            case TOKEN_FUNCTION:
+            case TOKEN_VAR:
+            case TOKEN_FOR:
+            case TOKEN_IF:
+            case TOKEN_WHILE:
+            case TOKEN_PRINT:
+            case TOKEN_RETURN:
+                return;
+        }
+
+        advance(p);
+    }
+}
+
+// Declerations
+static void
+dec_var(Parser *p)
+{
+    uint8_t global = PARSER_VARIABLE("Expected variable name.");
+
+    if (MATCH_TOKEN(TOKEN_EQUAL)) {
+        expression(p);
+    } else {
+        EMIT_BYTE(OP_NIL);
+    }
+    consume(p, TOKEN_SEMICOLON, "Expected ';' after variable declaration.");
+    EMIT_BYTES(OP_DEFINE_GLOBAL, global);
+}
+
+// Statements
+static void 
+stmt_print(Parser *p) 
+{
+    expression(p);
+    consume(p, TOKEN_SEMICOLON, "Expect ';' after value.");
+    EMIT_BYTE(OP_PRINT);
+}
+
+static void 
+expression_statement(Parser *p) 
+{
+    expression(p);
+    consume(p, TOKEN_SEMICOLON, "Expect ';' after expression.");
+    EMIT_BYTE(OP_POP);
+}
+
+
+static void 
+statement(Parser *p) 
+{
+    if (MATCH_TOKEN(TOKEN_PRINT)) {
+        stmt_print(p);
+    }
+    else {
+        expression_statement(p);
+    }
+}
+
+static void 
+declaration(Parser *p) 
+{
+    if (MATCH_TOKEN(TOKEN_VAR)) {
+        dec_var(p);
+    }
+    else {
+        statement(p);
+    }
+
+    if (p->panic_mode) {
+        synchronize(p);
+    }
+}
+
 Parser*
-parser_init(Scanner *s, QxlChunk *c) 
+parser_init(Scanner *s, QxlChunk *c, QxlHashTable *vm_global_strings) 
 {
     Parser *p = calloc(1, sizeof(Parser));
     p->s = s;
     p->had_error = false;
     p->panic_mode = false;
     p->compiling_chunk = c;
+    p->vm_global_strings = vm_global_strings;
 
     return p;
 }
 
 bool 
-compile(QxlChunk* c, const char *src) 
+compile(QxlChunk* c, const char *src, QxlHashTable *vm_global_strings) 
 {
-    Parser *p = parser_init(scanner_init(src), c);
+    Parser *p = parser_init(scanner_init(src), c, vm_global_strings);
 
     advance(p);
-    expression(p);
-    consume(p, TOKEN_EOF, "Expect end of expression.");
+    // expression(p);
+    // consume(p, TOKEN_EOF, "Expect end of expression.");
+
+    while (!MATCH_TOKEN(TOKEN_EOF)) {
+        declaration(p);
+    }
 
     EMIT_RETURN();
     #ifdef DEBUG_TRACE_COMPILING_CHUNK

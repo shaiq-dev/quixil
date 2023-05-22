@@ -12,6 +12,7 @@
 
 #include "quixil.h"
 #include "chunk.h"
+#include "scanner.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,6 +20,7 @@ extern "C" {
 
 int debug_disassemble_instruction(QxlChunk *chunk, int offset);
 void debug_disassemble_chunk(QxlChunk *chunk, const char *name);
+void debug_token(TokenType type);
 
 #ifdef __cplusplus
 }

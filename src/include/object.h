@@ -3,6 +3,7 @@
 
 #include "quixil.h"
 #include "value.h"
+#include "collections.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,7 @@ struct QxlObjectString {
     QxlObject obj;
     int length;
     char* chars;
+    uint32_t hash;
 };
 
 static inline bool 
@@ -36,12 +38,12 @@ is_object_type(QxlValue value, QxlObjectType type)
 }
 
 void QxlObject_print(QxlValue value);
-QxlObjectString* QxlObjectString_copy(const char *chars, int length);
-QxlObjectString* QxlObjectString_take(char *chars, int length);
+QxlObjectString* QxlObjectString_copy(QxlHashTable *vm_global_strings, const char *chars, int length);
+QxlObjectString* QxlObjectString_take(QxlHashTable *vm_global_strings, char *chars, int length);
 
 // String Methods
-QxlObjectString *QxlString_concatenate(QxlObjectString *a, QxlObjectString *b);
-QxlObjectString *QxlString_repeat(QxlObjectString *s,  int count);
+QxlObjectString *QxlString_concatenate(QxlHashTable *vm_global_strings, QxlObjectString *a, QxlObjectString *b);
+QxlObjectString *QxlString_repeat(QxlHashTable *vm_global_strings, QxlObjectString *s,  int count);
 
 
 #ifdef __cplusplus

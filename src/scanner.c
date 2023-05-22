@@ -5,7 +5,7 @@
 
 #define IS_AT_END() *s->current == '\0'
 #define PEEK() *s->current
-#define ADVANCE() (*s->current++, s->current[-1])
+#define ADVANCE() (s->current++, s->current[-1])
 #define PEEK_NEXT() ( (IS_AT_END()) ? '\0' : s->current[1] )
 #define MATCH_NEXT_CHAR(e) ((IS_AT_END()) ? false : (*s->current != (e) ? false : (s->current++, true)))
 
@@ -70,6 +70,8 @@ get_identifier_type(Scanner *s)
         case 'w':
             return check_keyword(s, 1, 4, "hile", TOKEN_WHILE);
     }
+
+    return TOKEN_IDENTIFIER;
 }
 
 static Token 
@@ -99,21 +101,31 @@ token_error(Scanner* s, const char* message)
 static Token 
 token_string(Scanner* s) 
 {
-    while (PEEK() != '"' && !(IS_AT_END())) {
-        if (PEEK() == '\n') {
-            s->line++;
+    TokenType type = TOKEN_STRING;
+    for (;;) {
+        char c = ADVANCE();
+        if (c == '"') break;
+
+        if (c == '\n') s->line++;
+
+        if (c == '\0') {
+            return token_error(s, "Unterminated string 1");
         }
-        ADVANCE();
+
+        if (c == '$') {
+            if (s->num_parens > MAX_TEMPLATE_INTERPOLATION_NESTING) {
+                return token_error(s, "Template strings may only nest 8 levels deep");
+            }
+
+            if (ADVANCE() != '(') return token_error(s, "Expected '(' after '$'");
+            s->parens[s->num_parens++] = 1;
+            type = TOKEN_INTEROP;
+            break;
+        }
     }
 
-    if (IS_AT_END()) {
-        return token_error(s, "Unterminated string.");
-    }
-
-    // The closing quote
-    ADVANCE();
-    return make(s, TOKEN_STRING);
-} 
+    return make(s, type);
+}
 
 static Token 
 token_number(Scanner* s) 
@@ -183,7 +195,7 @@ scanner_init(const char* src)
     s->current = src;
     s->start = src;
     s->line = 1;
-
+    s->num_parens = 0;
     return s;
 }
 
@@ -208,8 +220,17 @@ scanner_scan_token(Scanner* s) {
 
     switch (c) {
         case '(':
+             // If we are inside an interpolated expression, count the unmatched "(".
+            if (s->num_parens > 0) s->parens[s->num_parens - 1]++;
             return make(s, TOKEN_LEFT_PAREN);
         case ')':
+            // If we are inside an interpolated expression, count the ")".
+            if (s->num_parens > 0 && --(s->parens[s->num_parens - 1]) == 0) {
+                // This is the final ")", so the interpolation expression has ended.
+                // This ")" now begins the next section of the template string.
+                s->num_parens--;
+                return token_string(s);
+            }
             return make(s, TOKEN_RIGHT_PAREN);
         case '{':
             return make(s, TOKEN_LEFT_BRACE);

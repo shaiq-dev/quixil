@@ -1,5 +1,6 @@
 #include "include/debug.h"
 #include "include/value.h"
+#include "include/scanner.h"
 
 #define SI(i) return simple_instruction((i), offset)
 
@@ -36,6 +37,12 @@ debug_disassemble_instruction(QxlChunk *chunk, int offset)
     switch (instruction) {
         case OP_CONSTANT:
             return constant_instruction("OP_CONSTANT", chunk, offset);
+        case OP_DEFINE_GLOBAL:
+            return constant_instruction("OP_DEFINE_GLOBAL", chunk, offset);
+        case OP_GET_GLOBAL:
+            return constant_instruction("OP_GET_GLOBAL", chunk, offset);
+        case OP_SET_GLOBAL:
+            return constant_instruction("OP_SET_GLOBAL", chunk, offset);
         case OP_NIL:        SI("OP_NIL");
         case OP_TRUE:       SI("OP_TRUE");
         case OP_FALSE:      SI("OP_FALSE");
@@ -48,6 +55,8 @@ debug_disassemble_instruction(QxlChunk *chunk, int offset)
         case OP_GREATER:    SI("OP_GREATER");
         case OP_LESS:       SI("OP_LESS");
         case OP_NEGATE:     SI("OP_NEGATE");
+        case OP_PRINT:      SI("OP_PRINT");
+        case OP_POP:        SI("OP_POP");
         case OP_RETURN:     SI("OP_RETURN");
         default:
             printf("Unknown opcode %d\n", instruction);
@@ -62,5 +71,59 @@ debug_disassemble_chunk(QxlChunk *chunk, const char *name)
 
     for (int offset = 0; offset < chunk->count;) {
         offset = debug_disassemble_instruction(chunk, offset);
+    }
+}
+
+const char* tokens[] = {
+    "TOKEN_LEFT_PAREN",
+    "TOKEN_RIGHT_PAREN",
+    "TOKEN_LEFT_BRACE",
+    "TOKEN_RIGHT_BRACE",
+    "TOKEN_COMMA",
+    "TOKEN_DOT",
+    "TOKEN_MINUS",
+    "TOKEN_PLUS",
+    "TOKEN_SEMICOLON",
+    "TOKEN_SLASH",
+    "TOKEN_STAR",
+    "TOKEN_BANG",
+    "TOKEN_BANG_EQUAL",
+    "TOKEN_EQUAL",
+    "TOKEN_EQUAL_EQUAL",
+    "TOKEN_GREATER",
+    "TOKEN_GREATER_EQUAL",
+    "TOKEN_LESS",
+    "TOKEN_LESS_EQUAL",
+    "TOKEN_IDENTIFIER",
+    "TOKEN_STRING",
+    "TOKEN_INTEROP",
+    "TOKEN_NUMBER",
+    "TOKEN_AND",
+    "TOKEN_CLASS",
+    "TOKEN_ELSE",
+    "TOKEN_FOR",
+    "TOKEN_FUNCTION",
+    "TOKEN_IF",
+    "TOKEN_NIL",
+    "TOKEN_OR",
+    "TOKEN_PRINT",
+    "TOKEN_RETURN",
+    "TOKEN_SUPER",
+    "TOKEN_THIS",
+    "TOKEN_TRUE",
+    "TOKEN_FALSE",
+    "TOKEN_VAR",
+    "TOKEN_WHILE",
+    "TOKEN_ERROR",
+    "TOKEN_EOF"
+};
+
+void
+debug_token(TokenType token)
+{
+    if (token >= 0 && token <= TOKEN_EOF) {
+        printf("%s\n", tokens[token]);
+    } else {
+        printf("Unknown token\n");
     }
 }

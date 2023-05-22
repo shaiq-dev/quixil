@@ -14,7 +14,8 @@ QxlValueList_init(QxlValueList *list)
 
 void QxlValueList_push(QxlValueList *list, QxlValue value) 
 {
-    if (list->cap < list->count + 1) {
+    if (list->cap < list->count + 1)
+    {
         size_t old_cap = list->cap;
         list->cap = QxlMem_Resize(old_cap);
         list->values = 
@@ -59,11 +60,7 @@ QxlValue_are_equal(QxlValue a, QxlValue b)
         case VAL_BOOL:   return AS_BOOL(a) == AS_BOOL(b);
         case VAL_NIL:    return true;
         case VAL_NUMBER: return AS_NUMBER(a) == AS_NUMBER(b);
-        case VAL_OBJECT: {
-            QxlObjectString *a_str = OBJECT_AS_STRING(a);
-            QxlObjectString *b_str = OBJECT_AS_STRING(b);
-            return a_str->length == b_str->length && memcmp(a_str->chars, b_str->chars, a_str->length) == 0;
-        }
+        case VAL_OBJECT: return AS_OBJECT(a) == AS_OBJECT(b);
         default:         return false; // Unreachable
     }
 }

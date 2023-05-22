@@ -7,11 +7,12 @@
 #include "include/debug.h"
 #include "include/object.h"
 #include "include/common.h"
+#include "include/collections.h"
 
 #define STACK_PEEK(d) vm->stack_top[-1 - (d)]
 
-static bool 
-is_falsey(QxlValue value) 
+    static bool
+    is_falsey(QxlValue value) 
 {
     return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
 }
@@ -44,14 +45,18 @@ VM
 {
     VM *vm = calloc(1, sizeof(VM));
     vm_stack_reset(vm);
+    QxlHashTable_init(&vm->strings);
+    QxlHashTable_init(&vm->globals);
     vm->objects = NULL;
     return vm;
 }
 
 void 
-vm_free() 
+vm_free(VM *vm) 
 {
     // NOT_IMPLEMENTED
+    QxlHashTable_free(&vm->globals);
+    QxlHashTable_free(&vm->strings);
 }
 
 static InterpretResult 
@@ -59,6 +64,7 @@ run(VM *vm)
 {
 #define READ_BYTE() (*vm->ip++)
 #define READ_CONSTANT() (vm->chunk->constants.values[READ_BYTE()])
+#define READ_STRING() OBJECT_AS_STRING(READ_CONSTANT())
 #define BINARY_OP(value_type, op) \
     do {                                                                \
         if (!IS_NUMBER(STACK_PEEK(0)) || !IS_NUMBER(STACK_PEEK(1))) {   \
@@ -122,17 +128,31 @@ run(VM *vm)
             case OP_LESS:     
                 BINARY_OP(BOOL_VAL, <); 
                 break;
-            case OP_ADD:
+            case OP_ADD: {
                 // String concatination
                 if (OBJECT_IS_STRING(STACK_PEEK(0)) && OBJECT_IS_STRING(STACK_PEEK(1))) {
                     QxlValue b = vm_stack_pop(vm);
                     QxlValue a = vm_stack_pop(vm);
-                    QxlObjectString *str = QxlString_concatenate(OBJECT_AS_STRING(a), OBJECT_AS_STRING(b));
-
-                    // Freeing Objects
-                    // str->obj.next = vm->objects;
-                    // vm->objects = str->obj;
-
+                    QxlObjectString *str = QxlString_concatenate(&vm->strings, OBJECT_AS_STRING(a), OBJECT_AS_STRING(b));
+                    vm_stack_push(vm, OBJECT_VAL(str));
+                }
+                else if((OBJECT_IS_STRING(STACK_PEEK(0)) && IS_NUMBER(STACK_PEEK(1))) ||
+                        (IS_NUMBER(STACK_PEEK(0)) && OBJECT_IS_STRING(STACK_PEEK(1)))
+                ) {
+                    QxlValue str_op;
+                    QxlObjectString *num_op, *str;
+                    if (IS_OBJECT(STACK_PEEK(0))) {
+                        str_op = vm_stack_pop(vm);
+                        char *ds = Qxl_num_as_str(AS_NUMBER(vm_stack_pop(vm)));
+                        num_op = QxlObjectString_copy(&vm->strings, ds, strlen(ds));
+                        str = QxlString_concatenate(&vm->strings, num_op, OBJECT_AS_STRING(str_op));
+                    }
+                    else {
+                        char *ds = Qxl_num_as_str(AS_NUMBER(vm_stack_pop(vm)));
+                        num_op = QxlObjectString_copy(&vm->strings, ds, strlen(ds));
+                        str_op = vm_stack_pop(vm);
+                        str = QxlString_concatenate(&vm->strings, OBJECT_AS_STRING(str_op), num_op);
+                    }
                     vm_stack_push(vm, OBJECT_VAL(str));
                 }
                 else if(OBJECT_IS_STRING(STACK_PEEK(0)) || OBJECT_IS_STRING(STACK_PEEK(1))) {
@@ -149,6 +169,7 @@ run(VM *vm)
                     BINARY_OP_(NUMBER_VAL, +, error);
                 }
                 break;
+            }
             case OP_SUBTRACT:
                 BINARY_OP(NUMBER_VAL, -);
                 break;
@@ -159,6 +180,7 @@ run(VM *vm)
                     QxlValue l = vm_stack_pop(vm);
                     QxlValue r = vm_stack_pop(vm);
                     QxlObjectString *str = QxlString_repeat(
+                        &vm->strings,
                         OBJECT_AS_STRING((IS_OBJECT(l) ? l : r)) , 
                         AS_NUMBER(IS_OBJECT(l) ? r : l)
                     );
@@ -187,8 +209,40 @@ run(VM *vm)
                 }
                 vm_stack_push(vm, NUMBER_VAL(-AS_NUMBER(vm_stack_pop(vm))));
                 break;
-            case OP_RETURN: {
+            case OP_PRINT: {
                 QxlValue_print(vm_stack_pop(vm));
+                printf("\n");
+                break;
+            }
+            case OP_POP: 
+                vm_stack_pop(vm); 
+                break;
+            case OP_DEFINE_GLOBAL: {
+                QxlObjectString *name = READ_STRING();
+                QxlHashTable_put(&vm->globals, name, STACK_PEEK(0));
+                vm_stack_pop(vm);
+                break;
+            }
+            case OP_GET_GLOBAL: {
+                QxlObjectString *name = READ_STRING();
+                QxlValue value;
+                if (!QxlHashTable_get(&vm->globals, name, &value)) {
+                    runtime_error(vm, "Undefined variable '%s'.", name->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                vm_stack_push(vm, value);
+                break;
+            }
+            case OP_SET_GLOBAL: {
+                QxlObjectString *name = READ_STRING();
+                if (QxlHashTable_put(&vm->globals, name, STACK_PEEK(0))) {
+                    QxlHashTable_remove(&vm->globals, name); 
+                    runtime_error(vm, "Undefined variable '%s'.", name->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
+            case OP_RETURN: {
                 return INTERPRET_OK;
             }
         }
@@ -197,6 +251,7 @@ run(VM *vm)
 #undef READ_BYTE
 #undef READ_CONSTANT
 #undef BINARY_OP
+#undef READ_STRING
 }
 
 InterpretResult 
@@ -205,7 +260,7 @@ vm_interpret(VM *vm, const char * src)
     QxlChunk compiling_chunk;
     QxlChunk_init(&compiling_chunk);
 
-    if (!compile(&compiling_chunk, src)) {
+    if (!compile(&compiling_chunk, src, &vm->strings)) {
         QxlChunk_free(&compiling_chunk);
         return INTERPRET_COMPILE_ERROR;
     }

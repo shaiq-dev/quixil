@@ -2,6 +2,7 @@
 #define Qxl_VM_H
 
 #include "chunk.h"
+#include "collections.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,6 +16,8 @@ typedef struct {
     QxlValue stack[VM_STACK_MAX];
     QxlValue *stack_top;
     QxlObject *objects;
+    QxlHashTable strings;
+    QxlHashTable globals;
 } VM;
 
 typedef enum {
@@ -24,7 +27,7 @@ typedef enum {
 } InterpretResult;
 
 VM *vm_init();
-void vm_free();
+void vm_free(VM *vm);
 InterpretResult vm_interpret(VM *vm, const char *src);
 void vm_stack_push(VM *vm, QxlValue value);
 QxlValue vm_stack_pop(VM *vm);
