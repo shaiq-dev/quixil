@@ -10,6 +10,8 @@
 extern "C" {
 #endif
 
+#define UINT8_COUNT (UINT8_MAX + 1)
+
 typedef struct {
     Scanner *s;
     Token cur;
@@ -42,7 +44,19 @@ typedef enum {
     PREC_PRIMARY
 } Precedence;
 
-typedef void (*ParseFn)(Parser *p, bool can_assign);
+typedef struct {
+    Token name;
+    int depth;
+} Local;
+
+typedef struct {
+    Local locals[UINT8_COUNT];
+    int local_count;
+    int scope_depth;
+    Parser *p;
+} Compiler;
+
+typedef void (*ParseFn)(Compiler *c, bool can_assign);
 
 typedef struct {
     ParseFn prefix;
@@ -51,7 +65,8 @@ typedef struct {
 } ParseRule;
 
 Parser* parser_init(Scanner *s, QxlChunk *c, QxlHashTable *vm_global_strings);
-bool compile(QxlChunk *c, const char *src, QxlHashTable *vm_global_strings);
+bool compile(QxlChunk *chunk, const char *src, QxlHashTable *vm_global_strings);
+Compiler *compiler_init(Parser *p);
 
 #ifdef __cplusplus
 }
