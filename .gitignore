@@ -26,5 +26,4 @@
 *.pdb
 
 # Others
-.vscode
 test.qx

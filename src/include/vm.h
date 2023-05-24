@@ -5,32 +5,35 @@
 #include "collections.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #define VM_STACK_MAX 256
 
-typedef struct {
-    QxlChunk *chunk;
-    uint8_t *ip;
-    QxlValue stack[VM_STACK_MAX];
-    QxlValue *stack_top;
-    QxlObject *objects;
-    QxlHashTable strings;
-    QxlHashTable globals;
-} VM;
+    typedef struct
+    {
+        QxlChunk *chunk;
+        uint8_t *ip;
+        QxlValue stack[VM_STACK_MAX];
+        QxlValue *stack_top;
+        QxlObject *objects;
+        QxlHashTable strings;
+        QxlHashTable globals;
+    } VM;
 
-typedef enum {
-    INTERPRET_OK,
-    INTERPRET_COMPILE_ERROR,
-    INTERPRET_RUNTIME_ERROR
-} InterpretResult;
+    typedef enum
+    {
+        INTERPRET_OK,
+        INTERPRET_COMPILE_ERROR,
+        INTERPRET_RUNTIME_ERROR
+    } InterpretResult;
 
-VM *vm_init();
-void vm_free(VM *vm);
-InterpretResult vm_interpret(VM *vm, const char *src);
-void vm_stack_push(VM *vm, QxlValue value);
-QxlValue vm_stack_pop(VM *vm);
+    VM *vm_init ();
+    void vm_free (VM *vm);
+    InterpretResult vm_interpret (VM *vm, const char *src);
+    void vm_stack_push (VM *vm, QxlValue value);
+    QxlValue vm_stack_pop (VM *vm);
 
 #ifdef __cplusplus
 }
