@@ -242,6 +242,16 @@ run(VM *vm)
                 }
                 break;
             }
+            case OP_GET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                vm_stack_push(vm, vm->stack[slot]); 
+                break;
+            }
+            case OP_SET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                vm->stack[slot] = STACK_PEEK(0);
+                break;
+            }
             case OP_RETURN: {
                 return INTERPRET_OK;
             }

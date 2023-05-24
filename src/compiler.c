@@ -10,8 +10,12 @@
 #define CHECK_TYPE(_type) (c->p->cur.type == (_type))
 #define MATCH_TOKEN(_type) (CHECK_TYPE(_type) ? (advance(c), true) : false)
 #define CONST_IDENTIFIER(token) (make_constant(c, OBJECT_VAL(QxlObjectString_copy(c->p->vm_global_strings, token.start, token.length))))
-#define PARSER_VARIABLE(e) ({ consume(c, TOKEN_IDENTIFIER, (e)); CONST_IDENTIFIER(c->p->prev); })
+#define DECLARE_VAR() ({ if(c->scope_depth == 0) return; add_local(c, c->p->prev); })
 #define NAMED_VARIABLE() (EMIT_BYTES(OP_GET_GLOBAL, (uint8_t)CONST_IDENTIFIER(c->p->prev)))
+#define SCOPE_BEGIN() (c->scope_depth++)
+#define SCOPE_END() (c->scope_depth--)
+#define IDENTIFIERS_EQUAL(a, b) ((a)->length == (b)->length && memcmp((a)->start, (b)->start, (a)->length) == 0)
+#define MARK_INITIALIZED() c->locals[c->local_count -1].depth = c->scope_depth
 
 static void unary(Compiler *c, bool can_assign);
 static void grouping(Compiler *c, bool can_assign);
@@ -75,12 +79,12 @@ get_rule(TokenType type)
 }
 
 static void 
-error_at(Compiler *c, Token* token, const char* msg) {
-    if (c->p->panic_mode) {
+error_at(Parser *p, Token* token, const char* msg) {
+    if (p->panic_mode) {
         return;
     }
 
-    c->p->panic_mode = true;
+    p->panic_mode = true;
     Qxl_ERROR("[line %d] Error", token->line);
 
     if (token->type == TOKEN_EOF) {
@@ -92,7 +96,7 @@ error_at(Compiler *c, Token* token, const char* msg) {
     }
 
     Qxl_ERROR(": %s\n", msg);
-    c->p->had_error = true;
+    p->had_error = true;
 }
 
 static void
@@ -158,6 +162,16 @@ make_constant(Compiler *c, QxlValue value)
 
     return (uint8_t)constant;
 }
+
+static void
+scope_end(Compiler *c) {
+    c->scope_depth--;
+
+    while (c->local_count > 0 && c->locals[c->local_count - 1].depth > c->scope_depth) {
+        EMIT_BYTE(OP_POP);
+        c->local_count--;
+    }
+} 
 
 static void
 number(Compiler *c, bool can_assign)
@@ -247,15 +261,40 @@ literal(Compiler *c, bool can_assign)
     }
 }
 
+static int
+resolve_local_variable(Compiler *c, Token *name)
+{
+    for (int i = c->local_count - 1; i >= 0; i--) {
+        Local* local = &c->locals[i];
+        if (IDENTIFIERS_EQUAL(name, &local->name)) {
+            if (local->depth == -1) {
+                PARSER_ERROR("Can't read local variable in its own initializer.");
+            }
+            return i;
+        }
+    }
+    return -1;
+}
+
 static void
 named_variable(Compiler *c, bool can_assign) {
-    uint8_t arg = CONST_IDENTIFIER(c->p->prev);
+    uint8_t get_op, set_op;
+    int arg = resolve_local_variable(c, &c->p->prev);
+
+    if (arg != -1) {
+        get_op = OP_GET_LOCAL;
+        set_op = OP_SET_LOCAL;
+    } else {
+        arg = CONST_IDENTIFIER(c->p->prev);
+        get_op = OP_GET_GLOBAL;
+        set_op = OP_SET_GLOBAL;
+    }
 
     if (can_assign && MATCH_TOKEN(TOKEN_EQUAL)) {
         expression(c);
-        EMIT_BYTES(OP_SET_GLOBAL, arg);
+        EMIT_BYTES(set_op, (uint8_t)arg);
     } else {
-        EMIT_BYTES(OP_GET_GLOBAL, arg);
+        EMIT_BYTES(get_op, (uint8_t)arg);
     }
 }
 
@@ -290,10 +329,63 @@ synchronize(Compiler *c)
 }
 
 // Declerations
+static void 
+add_local(Compiler *c, Token name) 
+{
+
+    if (c->local_count == UINT8_COUNT) {
+        PARSER_ERROR("Too many local variables in function.");
+        return;
+    }
+
+    Local* local = &c->locals[c->local_count++];
+    local->name = name;
+    local->depth = -1;
+}
+
+static void 
+declare_variable(Compiler *c) 
+{
+    if (c->scope_depth == 0) return;
+    Token *name = &c->p->prev;
+
+    for (int i = c->local_count - 1; i >= 0; i--) {
+        Local* local = &c->locals[i];
+        if (local->depth != -1 && local->depth < c->scope_depth) {
+            break; 
+        }
+
+        if (IDENTIFIERS_EQUAL(name, &local->name)) {
+            PARSER_ERROR("Already a variable with this name in this scope");
+        }
+    }
+
+    add_local(c, *name);
+}
+
+
+static uint8_t
+parse_variable(Compiler *c)
+{
+    consume(c, TOKEN_IDENTIFIER, "Expected variable name");
+    declare_variable(c);
+    return c->scope_depth > 0 ? 0 : CONST_IDENTIFIER(c->p->prev);
+}
+
+static void
+define_variable(Compiler *c, uint8_t global)
+{
+    if (c->scope_depth > 0) {
+        MARK_INITIALIZED();
+        return;
+    }
+    EMIT_BYTES(OP_DEFINE_GLOBAL, global);
+}
+
 static void
 dec_var(Compiler *c)
 {
-    uint8_t global = PARSER_VARIABLE("Expected variable name.");
+    uint8_t global = parse_variable(c);
 
     if (MATCH_TOKEN(TOKEN_EQUAL)) {
         expression(c);
@@ -301,7 +393,7 @@ dec_var(Compiler *c)
         EMIT_BYTE(OP_NIL);
     }
     consume(c, TOKEN_SEMICOLON, "Expected ';' after variable declaration.");
-    EMIT_BYTES(OP_DEFINE_GLOBAL, global);
+    define_variable(c, global);
 }
 
 // Statements
@@ -321,12 +413,26 @@ expression_statement(Compiler *c)
     EMIT_BYTE(OP_POP);
 }
 
+static void 
+block(Compiler *c) {
+    while (!CHECK_TYPE(TOKEN_RIGHT_BRACE) && !CHECK_TYPE(TOKEN_EOF)) {
+        declaration(c);
+    }
+
+    consume(c, TOKEN_RIGHT_BRACE, "Expect '}' after block.");
+}
+
 
 static void 
 statement(Compiler *c) 
 {
     if (MATCH_TOKEN(TOKEN_PRINT)) {
         stmt_print(c);
+    }
+    else if (MATCH_TOKEN(TOKEN_LEFT_BRACE)) {
+        SCOPE_BEGIN();
+        block(c);
+        scope_end(c);
     }
     else {
         expression_statement(c);

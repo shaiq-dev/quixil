@@ -22,6 +22,14 @@ constant_instruction(const char *name, QxlChunk *chunk, int offset)
     return offset + 2;
 }
 
+static int 
+byte_instruction(const char *name, QxlChunk *chunk, int offset) 
+{
+    uint8_t slot = chunk->code[offset + 1];
+    printf("%-16s %4d\n", name, slot);
+    return offset + 2; 
+}
+
 int 
 debug_disassemble_instruction(QxlChunk *chunk, int offset) 
 {
@@ -43,6 +51,10 @@ debug_disassemble_instruction(QxlChunk *chunk, int offset)
             return constant_instruction("OP_GET_GLOBAL", chunk, offset);
         case OP_SET_GLOBAL:
             return constant_instruction("OP_SET_GLOBAL", chunk, offset);
+        case OP_GET_LOCAL:
+            return byte_instruction("OP_GET_LOCAL", chunk, offset);
+        case OP_SET_LOCAL:
+            return byte_instruction("OP_SET_LOCAL", chunk, offset);
         case OP_NIL:        SI("OP_NIL");
         case OP_TRUE:       SI("OP_TRUE");
         case OP_FALSE:      SI("OP_FALSE");
