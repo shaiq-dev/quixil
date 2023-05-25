@@ -3,11 +3,29 @@
 
 #define PARSER_ERROR(m) error_at(c->p, &c->p->prev, (m))
 #define PARSER_ERROR_AT_CUR(m) error_at(c->p, &c->p->cur, (m))
+#define COMPILING_CHUNK c->p->compiling_chunk
 #define EMIT_BYTE(byte)                                                        \
     QxlChunk_add(c->p->compiling_chunk, (byte), c->p->prev.line)
 #define EMIT_RETURN() EMIT_BYTE(OP_RETURN)
 #define EMIT_BYTES(byte_1, byte_2) (EMIT_BYTE(byte_1), EMIT_BYTE(byte_2))
 #define EMIT_CONST(val) EMIT_BYTES(OP_CONSTANT, make_constant(c, val))
+#define EMIT_JUMP(inst)                                                        \
+    ({                                                                         \
+        EMIT_BYTE(inst);                                                       \
+        EMIT_BYTE(0xff);                                                       \
+        EMIT_BYTE(0xff);                                                       \
+        COMPILING_CHUNK->count - 2;                                            \
+    })
+#define PATCH_JUMP(offset)                                                     \
+    {                                                                          \
+        int jump = COMPILING_CHUNK->count - (offset)-2;                        \
+        if (jump > UINT16_MAX)                                                 \
+        {                                                                      \
+            PARSER_ERROR("Too much code to jump over");                        \
+        }                                                                      \
+        COMPILING_CHUNK->code[offset]     = (jump >> 8) & 0xff;                \
+        COMPILING_CHUNK->code[offset + 1] = jump & 0xff;                       \
+    }
 #define CHECK_TYPE(_type) (c->p->cur.type == (_type))
 #define MATCH_TOKEN(_type) (CHECK_TYPE(_type) ? (advance(c), true) : false)
 #define CONST_IDENTIFIER(token)                                                \
@@ -493,6 +511,25 @@ stmt_print(Compiler *c)
 }
 
 static void
+stmt_if(Compiler *c)
+{
+    consume(c, TOKEN_LEFT_PAREN, "Expected '(' after 'if'");
+    expression(c);
+    consume(c, TOKEN_RIGHT_PAREN, "Expected ')' after condition");
+
+    int then_jump = EMIT_JUMP(OP_JUMP_IF_FALSE);
+    EMIT_BYTE(OP_POP);
+    statement(c);
+    int else_jump = EMIT_JUMP(OP_JUMP);
+
+    PATCH_JUMP(then_jump);
+    EMIT_BYTE(OP_POP);
+
+    if (MATCH_TOKEN(TOKEN_ELSE)) statement(c);
+    PATCH_JUMP(else_jump);
+}
+
+static void
 expression_statement(Compiler *c)
 {
     expression(c);
@@ -517,6 +554,10 @@ statement(Compiler *c)
     if (MATCH_TOKEN(TOKEN_PRINT))
     {
         stmt_print(c);
+    }
+    else if (MATCH_TOKEN(TOKEN_IF))
+    {
+        stmt_if(c);
     }
     else if (MATCH_TOKEN(TOKEN_LEFT_BRACE))
     {

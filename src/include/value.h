@@ -1,6 +1,8 @@
 #ifndef Qxl_VALUE_H
 #define Qxl_VALUE_H
 
+#include "quixil.h"
+
 #ifdef __cplusplus
 extern "C"
 {
