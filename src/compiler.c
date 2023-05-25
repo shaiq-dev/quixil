@@ -49,6 +49,8 @@
 static void unary(Compiler *c, bool can_assign);
 static void grouping(Compiler *c, bool can_assign);
 static void binary(Compiler *c, bool can_assign);
+static void and_(Compiler *c, bool can_assign);
+static void or_(Compiler *c, bool can_assign);
 static void number(Compiler *c, bool can_assign);
 static void template(Compiler *c, bool can_assign);
 static void string(Compiler *c, bool can_assign);
@@ -81,7 +83,7 @@ ParseRule rules[] = {
     [TOKEN_STRING]        = {string, NULL, PREC_NONE},
     [TOKEN_INTEROP]       = {template, NULL, PREC_NONE},
     [TOKEN_NUMBER]        = {number, NULL, PREC_NONE},
-    [TOKEN_AND]           = {NULL, NULL, PREC_NONE},
+    [TOKEN_AND]           = {NULL, and_, PREC_AND},
     [TOKEN_CLASS]         = {NULL, NULL, PREC_NONE},
     [TOKEN_ELSE]          = {NULL, NULL, PREC_NONE},
     [TOKEN_FALSE]         = {literal, NULL, PREC_NONE},
@@ -89,7 +91,7 @@ ParseRule rules[] = {
     [TOKEN_FUNCTION]      = {NULL, NULL, PREC_NONE},
     [TOKEN_IF]            = {NULL, NULL, PREC_NONE},
     [TOKEN_NIL]           = {literal, NULL, PREC_NONE},
-    [TOKEN_OR]            = {NULL, NULL, PREC_NONE},
+    [TOKEN_OR]            = {NULL, or_, PREC_OR},
     [TOKEN_PRINT]         = {NULL, NULL, PREC_NONE},
     [TOKEN_RETURN]        = {NULL, NULL, PREC_NONE},
     [TOKEN_SUPER]         = {NULL, NULL, PREC_NONE},
@@ -217,6 +219,26 @@ scope_end(Compiler *c)
         EMIT_BYTE(OP_POP);
         c->local_count--;
     }
+}
+
+static void
+and_(Compiler *c, bool can_assign)
+{
+    int end_jump = EMIT_JUMP(OP_JUMP_IF_FALSE);
+    EMIT_BYTE(OP_POP);
+    parse_precedence(c, PREC_AND);
+    PATCH_JUMP(end_jump);
+}
+
+static void
+or_(Compiler *c, bool can_assign)
+{
+    int else_jump = EMIT_JUMP(OP_JUMP_IF_FALSE);
+    int end_jump  = EMIT_JUMP(OP_JUMP);
+    PATCH_JUMP(else_jump);
+    EMIT_BYTE(OP_POP);
+    parse_precedence(c, PREC_OR);
+    PATCH_JUMP(end_jump);
 }
 
 static void
