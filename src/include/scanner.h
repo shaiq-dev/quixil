@@ -78,8 +78,8 @@ extern "C"
         int line;
     } Token;
 
-    Scanner *scanner_init (const char *src);
-    Token scanner_scan_token (Scanner *s);
+    Scanner *scanner_init(const char *src);
+    Token scanner_scan_token(Scanner *s);
 
 #ifdef __cplusplus
 }

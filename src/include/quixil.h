@@ -19,7 +19,7 @@ extern "C"
 
 #define Qxl_INTERCEPT_ERROR(r, i, c)                                           \
     \ 
-    if (r == i) exit (c)
+    if (r == i) exit(c)
 
 #define Qxl_ERROR(...)                                                         \
     \                   
@@ -27,7 +27,7 @@ extern "C"
     {                                                                          \
         if (__VA_ARGS__)                                                       \
         {                                                                      \
-            (void)fprintf (stderr, __VA_ARGS__);                               \
+            (void)fprintf(stderr, __VA_ARGS__);                                \
         }                                                                      \
     }                                                                          \
     while (0)

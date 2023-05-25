@@ -1,18 +1,18 @@
 #include "include/memory.h"
 
 void *
-QxlMem_reallocate (void *ptr, size_t size, size_t new_size)
+QxlMem_reallocate(void *ptr, size_t size, size_t new_size)
 {
     if (new_size == 0)
     {
-        free (ptr);
+        free(ptr);
         return NULL;
     }
 
-    void *result = realloc (ptr, new_size);
+    void *result = realloc(ptr, new_size);
     if (result == NULL)
     {
-        exit (1);
+        exit(1);
     }
     return result;
 }

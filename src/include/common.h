@@ -9,13 +9,13 @@ extern "C"
 #endif
 
     /* Remember to free the string after using */
-    char *Qxl_fstr (const char *format, ...);
+    char *Qxl_fstr(const char *format, ...);
 
     /* Hash strings using FNV-1a algorithim */
-    uint32_t Qxl_hash_str (const char *key, int length);
+    uint32_t Qxl_hash_str(const char *key, int length);
 
     /* Convert a double to string */
-    char *Qxl_num_as_str (int value);
+    char *Qxl_num_as_str(int value);
 
 #ifdef __cplusplus
 }

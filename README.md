@@ -10,7 +10,7 @@ Take a look at some of the cool stuff.
 
 ```js
 var myPlanet = "Earth";     // var is mutable
-print("Hello $(myPlanet)")  // OR print "Hello $(myPlanet);
+print("Hello $(myPlanet)")  // OR print "Hello $(myPlanet)";
 
 const solarSystem = ["Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"];
 

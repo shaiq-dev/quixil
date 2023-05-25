@@ -24,15 +24,15 @@ extern "C"
         HashTableEntry *entries;
     } QxlHashTable;
 
-    void QxlHashTable_init (QxlHashTable *t);
-    void QxlHashTable_free (QxlHashTable *t);
-    bool QxlHashTable_put (QxlHashTable *t, QxlObjectString *k, QxlValue v);
-    void QxlHashTable_merge (QxlHashTable *from, QxlHashTable *to);
-    bool QxlHashTable_get (QxlHashTable *t, QxlObjectString *k, QxlValue *v);
-    bool QxlHashTable_remove (QxlHashTable *t, QxlObjectString *k);
-    QxlObjectString *QxlHashTable_find_string (QxlHashTable *t,
-                                               const char *chars, int length,
-                                               uint32_t hash);
+    void QxlHashTable_init(QxlHashTable *t);
+    void QxlHashTable_free(QxlHashTable *t);
+    bool QxlHashTable_put(QxlHashTable *t, QxlObjectString *k, QxlValue v);
+    void QxlHashTable_merge(QxlHashTable *from, QxlHashTable *to);
+    bool QxlHashTable_get(QxlHashTable *t, QxlObjectString *k, QxlValue *v);
+    bool QxlHashTable_remove(QxlHashTable *t, QxlObjectString *k);
+    QxlObjectString *QxlHashTable_find_string(QxlHashTable *t,
+                                              const char *chars, int length,
+                                              uint32_t hash);
 
 #ifdef __cplusplus
 }

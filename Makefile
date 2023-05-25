@@ -19,3 +19,6 @@ clean:
 
 run:
 	make && make clean && ./quixil.out ./test.qx
+
+format:
+	./format.sh

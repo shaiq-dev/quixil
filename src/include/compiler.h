@@ -61,7 +61,7 @@ extern "C"
         Parser *p;
     } Compiler;
 
-    typedef void (*ParseFn) (Compiler *c, bool can_assign);
+    typedef void (*ParseFn)(Compiler *c, bool can_assign);
 
     typedef struct
     {
@@ -70,11 +70,11 @@ extern "C"
         Precedence precedence;
     } ParseRule;
 
-    Parser *parser_init (Scanner *s, QxlChunk *c,
-                         QxlHashTable *vm_global_strings);
-    bool compile (QxlChunk *chunk, const char *src,
-                  QxlHashTable *vm_global_strings);
-    Compiler *compiler_init (Parser *p);
+    Parser *parser_init(Scanner *s, QxlChunk *c,
+                        QxlHashTable *vm_global_strings);
+    bool compile(QxlChunk *chunk, const char *src,
+                 QxlHashTable *vm_global_strings);
+    Compiler *compiler_init(Parser *p);
 
 #ifdef __cplusplus
 }

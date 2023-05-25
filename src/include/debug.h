@@ -19,9 +19,9 @@ extern "C"
 {
 #endif
 
-    int debug_disassemble_instruction (QxlChunk *chunk, int offset);
-    void debug_disassemble_chunk (QxlChunk *chunk, const char *name);
-    void debug_token (TokenType type);
+    int debug_disassemble_instruction(QxlChunk *chunk, int offset);
+    void debug_disassemble_chunk(QxlChunk *chunk, const char *name);
+    void debug_token(TokenType type);
 
 #ifdef __cplusplus
 }

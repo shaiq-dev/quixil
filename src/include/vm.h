@@ -29,11 +29,11 @@ extern "C"
         INTERPRET_RUNTIME_ERROR
     } InterpretResult;
 
-    VM *vm_init ();
-    void vm_free (VM *vm);
-    InterpretResult vm_interpret (VM *vm, const char *src);
-    void vm_stack_push (VM *vm, QxlValue value);
-    QxlValue vm_stack_pop (VM *vm);
+    VM *vm_init();
+    void vm_free(VM *vm);
+    InterpretResult vm_interpret(VM *vm, const char *src);
+    void vm_stack_push(VM *vm, QxlValue value);
+    QxlValue vm_stack_pop(VM *vm);
 
 #ifdef __cplusplus
 }

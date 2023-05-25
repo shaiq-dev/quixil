@@ -45,10 +45,10 @@ extern "C"
         int *lines;
     } QxlChunk;
 
-    void QxlChunk_init (QxlChunk *chunk);
-    void QxlChunk_add (QxlChunk *chunk, uint8_t byte, int line);
-    int QxlChunk_add_constant (QxlChunk *chunk, QxlValue value);
-    void QxlChunk_free (QxlChunk *chunk);
+    void QxlChunk_init(QxlChunk *chunk);
+    void QxlChunk_add(QxlChunk *chunk, uint8_t byte, int line);
+    int QxlChunk_add_constant(QxlChunk *chunk, QxlValue value);
+    void QxlChunk_free(QxlChunk *chunk);
 
 #ifdef __cplusplus
 }

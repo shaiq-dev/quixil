@@ -50,14 +50,14 @@ extern "C"
 #define IS_OBJECT(value) ((value).type == VAL_OBJECT)
 
 #define Qxl_TYPE_NAME(value)                                                   \
-    (IS_OBJECT (value) ? AS_OBJECT (value)->obj_name : (value).type_name)
+    (IS_OBJECT(value) ? AS_OBJECT(value)->obj_name : (value).type_name)
 
-    void QxlValueList_init (QxlValueList *list);
-    void QxlValueList_push (QxlValueList *list, QxlValue value);
-    void QxlValueList_free (QxlValueList *list);
+    void QxlValueList_init(QxlValueList *list);
+    void QxlValueList_push(QxlValueList *list, QxlValue value);
+    void QxlValueList_free(QxlValueList *list);
 
-    void QxlValue_print (QxlValue value);
-    bool QxlValue_are_equal (QxlValue a, QxlValue b);
+    void QxlValue_print(QxlValue value);
+    bool QxlValue_are_equal(QxlValue a, QxlValue b);
 
 #ifdef __cplusplus
 }
