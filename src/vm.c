@@ -244,6 +244,9 @@ run(VM *vm)
         case OP_POP:
             vm_stack_pop(vm);
             break;
+        case OP_DUP:
+            vm_stack_push(vm, STACK_PEEK(0));
+            break;
         case OP_DEFINE_GLOBAL:
         {
             QxlObjectString *name = READ_STRING();

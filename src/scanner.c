@@ -8,6 +8,7 @@
 #define PEEK() *s->current
 #define ADVANCE() (s->current++, s->current[-1])
 #define PEEK_NEXT() ((IS_AT_END()) ? '\0' : s->current[1])
+#define PEEK_DISTANCE(d) ((IS_AT_END()) ? '\0' : s->current[d])
 #define MATCH_NEXT_CHAR(e)                                                     \
     ((IS_AT_END()) ? false                                                     \
                    : (*s->current != (e) ? false : (s->current++, true)))
@@ -77,7 +78,11 @@ get_identifier_type(Scanner *s)
     case 'v':
         return check_keyword(s, 1, 2, "ar", TOKEN_VAR);
     case 'w':
-        return check_keyword(s, 1, 4, "hile", TOKEN_WHILE);
+    {
+        bool is_while = PEEK_NEXT() == 'h' && PEEK_DISTANCE(2) == 'i';
+        return is_while ? check_keyword(s, 1, 4, "hile", TOKEN_WHILE)
+                        : check_keyword(s, 1, 3, "hen", TOKEN_WHEN);
+    }
     }
 
     return TOKEN_IDENTIFIER;
@@ -274,7 +279,7 @@ scanner_scan_token(Scanner *s)
     case '.':
         return make(s, TOKEN_DOT);
     case '-':
-        return make(s, TOKEN_MINUS);
+        return make(s, MATCH_NEXT_CHAR('>') ? TOKEN_ARROW : TOKEN_MINUS);
     case '+':
         return make(s, TOKEN_PLUS);
     case '/':

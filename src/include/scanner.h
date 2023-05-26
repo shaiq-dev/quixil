@@ -36,6 +36,7 @@ extern "C"
         TOKEN_SLASH,
         TOKEN_STAR,
         // One or two character tokens
+        TOKEN_ARROW,
         TOKEN_BANG,
         TOKEN_BANG_EQUAL,
         TOKEN_EQUAL,
@@ -56,6 +57,7 @@ extern "C"
         TOKEN_FOR,
         TOKEN_FUNCTION,
         TOKEN_IF,
+        TOKEN_WHEN,
         TOKEN_NIL,
         TOKEN_OR,
         TOKEN_PRINT,

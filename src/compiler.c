@@ -28,6 +28,10 @@
     }
 #define CHECK_TYPE(_type) (c->p->cur.type == (_type))
 #define MATCH_TOKEN(_type) (CHECK_TYPE(_type) ? (advance(c), true) : false)
+#define IS_NEXT_VALUE()                                                        \
+    ((CHECK_TYPE(TOKEN_TRUE) || CHECK_TYPE(TOKEN_FALSE) ||                     \
+      CHECK_TYPE(TOKEN_NIL) || CHECK_TYPE(TOKEN_NUMBER) ||                     \
+      CHECK_TYPE(TOKEN_STRING)))
 #define CONST_IDENTIFIER(token)                                                \
     (make_constant(                                                            \
         c, OBJECT_VAL(QxlObjectString_copy(c->p->vm_global_strings,            \
@@ -45,6 +49,8 @@
     ((a)->length == (b)->length &&                                             \
      memcmp((a)->start, (b)->start, (a)->length) == 0)
 #define MARK_INITIALIZED() c->locals[c->local_count - 1].depth = c->scope_depth
+
+#define MAX_WHEN_CASES 256
 
 static void unary(Compiler *c, bool can_assign);
 static void grouping(Compiler *c, bool can_assign);
@@ -552,6 +558,79 @@ stmt_if(Compiler *c)
 }
 
 static void
+stmt_when(Compiler *c)
+{
+    consume(c, TOKEN_LEFT_PAREN, "Expect '(' after 'when'");
+    expression(c);
+    consume(c, TOKEN_RIGHT_PAREN, "Expect ')' after value");
+    consume(c, TOKEN_LEFT_BRACE, "Expect '{' before when cases");
+
+    int state = 0; /* 0: before all cases, 1: before else, 2: after else */
+    int case_ends[MAX_WHEN_CASES];
+    int case_count     = 0;
+    int prev_case_skip = -1;
+
+    while (!MATCH_TOKEN(TOKEN_RIGHT_BRACE) && !CHECK_TYPE(TOKEN_EOF))
+    {
+        bool is_next_val = IS_NEXT_VALUE();
+        if (is_next_val || MATCH_TOKEN(TOKEN_ELSE))
+        {
+            if (state == 2)
+            {
+                PARSER_ERROR("Can't have another case or else after the else "
+                             "case.");
+            }
+
+            if (state == 1)
+            {
+                case_ends[case_count++] = EMIT_JUMP(OP_JUMP);
+                PATCH_JUMP(prev_case_skip);
+                EMIT_BYTE(OP_POP);
+            }
+
+            if (is_next_val)
+            {
+                state = 1;
+                EMIT_BYTE(OP_DUP);
+                expression(c);
+                consume(c, TOKEN_ARROW, "Expect '->' after case value");
+                EMIT_BYTE(OP_EQUAL);
+                prev_case_skip = EMIT_JUMP(OP_JUMP_IF_FALSE);
+                EMIT_BYTE(OP_POP);
+            }
+            else
+            {
+                state = 2;
+                consume(c, TOKEN_ARROW, "Expect '->' after else");
+                prev_case_skip = -1;
+            }
+        }
+        else
+        {
+            if (state == 0)
+            {
+                PARSER_ERROR("Can't have statements before any case.");
+            }
+            statement(c);
+        }
+    }
+
+    if (state == 1)
+    {
+        PATCH_JUMP(prev_case_skip);
+        EMIT_BYTE(OP_POP);
+    }
+
+    // Patch all the case jumps to the end
+    for (int i = 0; i < case_count; i++)
+    {
+        PATCH_JUMP(case_ends[i]);
+    }
+
+    EMIT_BYTE(OP_POP);
+}
+
+static void
 expression_statement(Compiler *c)
 {
     expression(c);
@@ -580,6 +659,10 @@ statement(Compiler *c)
     else if (MATCH_TOKEN(TOKEN_IF))
     {
         stmt_if(c);
+    }
+    else if (MATCH_TOKEN(TOKEN_WHEN))
+    {
+        stmt_when(c);
     }
     else if (MATCH_TOKEN(TOKEN_LEFT_BRACE))
     {
