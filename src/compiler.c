@@ -16,6 +16,14 @@
         EMIT_BYTE(0xff);                                                       \
         COMPILING_CHUNK->count - 2;                                            \
     })
+#define EMIT_LOOP(start)                                                       \
+    {                                                                          \
+        EMIT_BYTE(OP_LOOP);                                                    \
+        int offset = c->p->compiling_chunk->count - (start) + 2;               \
+        if (offset > UINT16_MAX) PARSER_ERROR("Loop body too large.");         \
+        EMIT_BYTE((offset >> 8) & 0xff);                                       \
+        EMIT_BYTE(offset & 0xff);                                              \
+    }
 #define PATCH_JUMP(offset)                                                     \
     {                                                                          \
         int jump = COMPILING_CHUNK->count - (offset)-2;                        \
@@ -631,6 +639,23 @@ stmt_when(Compiler *c)
 }
 
 static void
+stmt_while(Compiler *c)
+{
+    int loop_start = c->p->compiling_chunk->count;
+    consume(c, TOKEN_LEFT_PAREN, "Expected '(' after 'while'");
+    expression(c);
+    consume(c, TOKEN_RIGHT_PAREN, "Expected ')' after condition");
+
+    int exit_jump = EMIT_JUMP(OP_JUMP_IF_FALSE);
+    EMIT_BYTE(OP_POP);
+    statement(c);
+    EMIT_LOOP(loop_start);
+
+    PATCH_JUMP(exit_jump);
+    EMIT_BYTE(OP_POP);
+}
+
+static void
 expression_statement(Compiler *c)
 {
     expression(c);
@@ -663,6 +688,10 @@ statement(Compiler *c)
     else if (MATCH_TOKEN(TOKEN_WHEN))
     {
         stmt_when(c);
+    }
+    else if (MATCH_TOKEN(TOKEN_WHILE))
+    {
+        stmt_while(c);
     }
     else if (MATCH_TOKEN(TOKEN_LEFT_BRACE))
     {

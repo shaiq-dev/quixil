@@ -8,7 +8,6 @@
 #define PEEK() *s->current
 #define ADVANCE() (s->current++, s->current[-1])
 #define PEEK_NEXT() ((IS_AT_END()) ? '\0' : s->current[1])
-#define PEEK_DISTANCE(d) ((IS_AT_END()) ? '\0' : s->current[d])
 #define MATCH_NEXT_CHAR(e)                                                     \
     ((IS_AT_END()) ? false                                                     \
                    : (*s->current != (e) ? false : (s->current++, true)))
@@ -79,7 +78,7 @@ get_identifier_type(Scanner *s)
         return check_keyword(s, 1, 2, "ar", TOKEN_VAR);
     case 'w':
     {
-        bool is_while = PEEK_NEXT() == 'h' && PEEK_DISTANCE(2) == 'i';
+        bool is_while = s->start[1] == 'h' && s->start[2] == 'i';
         return is_while ? check_keyword(s, 1, 4, "hile", TOKEN_WHILE)
                         : check_keyword(s, 1, 3, "hen", TOKEN_WHEN);
     }
