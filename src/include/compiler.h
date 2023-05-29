@@ -22,11 +22,8 @@ extern "C"
         bool panic_mode;
         QxlChunk *compiling_chunk;
 
-        /*
-        Parsers needs access to the vm's strings table to
-        perform string interning. Thus attaching the vm's
-        global string table here.
-        */
+        // Parsers needs access to the vm's strings table to perform string
+        // interning.
         QxlHashTable *vm_global_strings;
     } Parser;
 
@@ -70,11 +67,8 @@ extern "C"
         Precedence precedence;
     } ParseRule;
 
-    Parser *parser_init(Scanner *s, QxlChunk *c,
-                        QxlHashTable *vm_global_strings);
     bool compile(QxlChunk *chunk, const char *src,
                  QxlHashTable *vm_global_strings);
-    Compiler *compiler_init(Parser *p);
 
 #ifdef __cplusplus
 }

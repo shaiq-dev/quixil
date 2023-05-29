@@ -1,6 +1,8 @@
 #include "include/compiler.h"
 #include "include/debug.h"
 
+#define STATEMENT(type) static void stmt_##type(Compiler *c)
+#define BIND_STATEMENT(type) stmt_##type(c)
 #define PARSER_ERROR(m) error_at(c->p, &c->p->prev, (m))
 #define PARSER_ERROR_AT_CUR(m) error_at(c->p, &c->p->cur, (m))
 #define COMPILING_CHUNK c->p->compiling_chunk
@@ -20,7 +22,7 @@
     {                                                                          \
         EMIT_BYTE(OP_LOOP);                                                    \
         int offset = c->p->compiling_chunk->count - (start) + 2;               \
-        if (offset > UINT16_MAX) PARSER_ERROR("Loop body too large.");         \
+        if (offset > UINT16_MAX) PARSER_ERROR("loop body too large");          \
         EMIT_BYTE((offset >> 8) & 0xff);                                       \
         EMIT_BYTE(offset & 0xff);                                              \
     }
@@ -29,7 +31,7 @@
         int jump = COMPILING_CHUNK->count - (offset)-2;                        \
         if (jump > UINT16_MAX)                                                 \
         {                                                                      \
-            PARSER_ERROR("Too much code to jump over");                        \
+            PARSER_ERROR("too much code to jump over");                        \
         }                                                                      \
         COMPILING_CHUNK->code[offset]     = (jump >> 8) & 0xff;                \
         COMPILING_CHUNK->code[offset + 1] = jump & 0xff;                       \
@@ -44,11 +46,15 @@
     (make_constant(                                                            \
         c, OBJECT_VAL(QxlObjectString_copy(c->p->vm_global_strings,            \
                                            token.start, token.length))))
-#define DECLARE_VAR()                                                          \
-    ({                                                                         \
-        if (c->scope_depth == 0) return;                                       \
-        add_local(c, c->p->prev);                                              \
-    })
+#define MARK_INITIALIZED() c->locals[c->local_count - 1].depth = c->scope_depth
+#define DEFINE_VAR(v)                                                          \
+    {                                                                          \
+        if (c->scope_depth > 0)                                                \
+            MARK_INITIALIZED();                                                \
+        else                                                                   \
+            EMIT_BYTES(OP_DEFINE_GLOBAL, v);                                   \
+    }
+
 #define NAMED_VARIABLE()                                                       \
     (EMIT_BYTES(OP_GET_GLOBAL, (uint8_t)CONST_IDENTIFIER(c->p->prev)))
 #define SCOPE_BEGIN() (c->scope_depth++)
@@ -56,7 +62,6 @@
 #define IDENTIFIERS_EQUAL(a, b)                                                \
     ((a)->length == (b)->length &&                                             \
      memcmp((a)->start, (b)->start, (a)->length) == 0)
-#define MARK_INITIALIZED() c->locals[c->local_count - 1].depth = c->scope_depth
 
 #define MAX_WHEN_CASES 256
 
@@ -71,7 +76,7 @@ static void string(Compiler *c, bool can_assign);
 static void literal(Compiler *c, bool can_assign);
 static void variable(Compiler *c, bool can_assign);
 static void statement(Compiler *c);
-static void declaration(Compiler *c);
+static void definition(Compiler *c);
 
 ParseRule rules[] = {
     [TOKEN_LEFT_PAREN]    = {grouping, NULL, PREC_NONE},
@@ -132,22 +137,20 @@ error_at(Parser *p, Token *token, const char *msg)
     }
 
     p->panic_mode = true;
-    Qxl_ERROR("[line %d] Error", token->line);
+    Qxl_ERROR("[Line %d]: error: %s\n  ", token->line, msg);
 
     if (token->type == TOKEN_EOF)
     {
-        Qxl_ERROR(" at end");
+        Qxl_ERROR(" at end\n");
     }
     else if (token->type == TOKEN_ERROR)
     {
-        // Nothing.
+        // Nothing
     }
     else
     {
-        Qxl_ERROR(" at '%.*s'", token->length, token->start);
+        Qxl_ERROR(" at \"%.*s\"\n", token->length, token->start);
     }
-
-    Qxl_ERROR(": %s\n", msg);
     p->had_error = true;
 }
 
@@ -165,7 +168,7 @@ advance(Compiler *c)
 }
 
 static void
-consume(Compiler *c, TokenType type, const char *msg)
+consume(Compiler *c, TokenType type)
 {
     if (c->p->cur.type == type)
     {
@@ -173,7 +176,7 @@ consume(Compiler *c, TokenType type, const char *msg)
         return;
     }
 
-    PARSER_ERROR_AT_CUR(msg);
+    PARSER_ERROR_AT_CUR("invalid syntax");
 }
 
 static void
@@ -183,7 +186,7 @@ parse_precedence(Compiler *c, Precedence prec)
     ParseFn prefix_rule = get_rule(c->p->prev.type)->prefix;
     if (prefix_rule == NULL)
     {
-        PARSER_ERROR("Expected expression.");
+        PARSER_ERROR("expected expression");
         return;
     }
 
@@ -199,7 +202,7 @@ parse_precedence(Compiler *c, Precedence prec)
 
     if (can_assign && MATCH_TOKEN(TOKEN_EQUAL))
     {
-        PARSER_ERROR("Invalid assignment target.");
+        PARSER_ERROR("invalid assignment target");
     }
 }
 
@@ -215,7 +218,7 @@ make_constant(Compiler *c, QxlValue value)
     int constant = QxlChunk_add_constant(c->p->compiling_chunk, value);
     if (constant > UINT8_MAX)
     {
-        PARSER_ERROR("Too many constants in one chunk.");
+        PARSER_ERROR("too many constants in one chunk");
         return 0;
     }
 
@@ -277,7 +280,7 @@ static void template(Compiler *c, bool can_assign)
         EMIT_BYTE(OP_ADD);
 
     } while (MATCH_TOKEN(TOKEN_INTEROP));
-    consume(c, TOKEN_STRING, "Expected end of template string");
+    consume(c, TOKEN_STRING);
     string(c, false);
     EMIT_BYTE(OP_ADD);
 }
@@ -294,7 +297,7 @@ static void
 grouping(Compiler *c, bool can_assign)
 {
     expression(c);
-    consume(c, TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
+    consume(c, TOKEN_RIGHT_PAREN);
 }
 
 static void
@@ -302,10 +305,10 @@ unary(Compiler *c, bool can_assign)
 {
     TokenType op_type = c->p->prev.type;
 
-    // Compile the operand.
+    // Compile the operand
     parse_precedence(c, PREC_UNARY);
 
-    // Emit the operator instruction.
+    // Emit the operator instruction
     switch (op_type)
     {
     case TOKEN_BANG:
@@ -393,7 +396,7 @@ resolve_local_variable(Compiler *c, Token *name)
             if (local->depth == -1)
             {
                 PARSER_ERROR(
-                    "Can't read local variable in its own initializer.");
+                    "can't read local variable in its own initializer");
             }
             return i;
         }
@@ -469,7 +472,7 @@ add_local(Compiler *c, Token name)
 
     if (c->local_count == UINT8_COUNT)
     {
-        PARSER_ERROR("Too many local variables in function.");
+        PARSER_ERROR("too many local variables in function");
         return;
     }
 
@@ -478,53 +481,34 @@ add_local(Compiler *c, Token name)
     local->depth = -1;
 }
 
+// Compiles a "var" variable definition statement
 static void
-declare_variable(Compiler *c)
+variable_definition(Compiler *c)
 {
-    if (c->scope_depth == 0) return;
-    Token *name = &c->p->prev;
-
-    for (int i = c->local_count - 1; i >= 0; i--)
+    consume(c, TOKEN_IDENTIFIER);
+    if (c->scope_depth != 0)
     {
-        Local *local = &c->locals[i];
-        if (local->depth != -1 && local->depth < c->scope_depth)
+        Token *name = &c->p->prev;
+
+        for (int i = c->local_count - 1; i >= 0; i--)
         {
-            break;
+            Local *local = &c->locals[i];
+            if (local->depth != -1 && local->depth < c->scope_depth)
+            {
+                break;
+            }
+
+            if (IDENTIFIERS_EQUAL(name, &local->name))
+            {
+                PARSER_ERROR(
+                    "variable with same name already exists in this scope");
+            }
         }
 
-        if (IDENTIFIERS_EQUAL(name, &local->name))
-        {
-            PARSER_ERROR("Already a variable with this name in this scope");
-        }
+        add_local(c, *name);
     }
 
-    add_local(c, *name);
-}
-
-static uint8_t
-parse_variable(Compiler *c)
-{
-    consume(c, TOKEN_IDENTIFIER, "Expected variable name");
-    declare_variable(c);
-    return c->scope_depth > 0 ? 0 : CONST_IDENTIFIER(c->p->prev);
-}
-
-static void
-define_variable(Compiler *c, uint8_t global)
-{
-    if (c->scope_depth > 0)
-    {
-        MARK_INITIALIZED();
-        return;
-    }
-    EMIT_BYTES(OP_DEFINE_GLOBAL, global);
-}
-
-static void
-dec_var(Compiler *c)
-{
-    uint8_t global = parse_variable(c);
-
+    uint8_t global = c->scope_depth > 0 ? 0 : CONST_IDENTIFIER(c->p->prev);
     if (MATCH_TOKEN(TOKEN_EQUAL))
     {
         expression(c);
@@ -533,25 +517,23 @@ dec_var(Compiler *c)
     {
         EMIT_BYTE(OP_NIL);
     }
-    consume(c, TOKEN_SEMICOLON, "Expected ';' after variable declaration.");
-    define_variable(c, global);
+    consume(c, TOKEN_SEMICOLON);
+    DEFINE_VAR(global);
 }
 
 // Statements
-static void
-stmt_print(Compiler *c)
+STATEMENT(print)
 {
     expression(c);
-    consume(c, TOKEN_SEMICOLON, "Expect ';' after value.");
+    consume(c, TOKEN_SEMICOLON);
     EMIT_BYTE(OP_PRINT);
 }
 
-static void
-stmt_if(Compiler *c)
+STATEMENT(if)
 {
-    consume(c, TOKEN_LEFT_PAREN, "Expected '(' after 'if'");
+    consume(c, TOKEN_LEFT_PAREN);
     expression(c);
-    consume(c, TOKEN_RIGHT_PAREN, "Expected ')' after condition");
+    consume(c, TOKEN_RIGHT_PAREN);
 
     int then_jump = EMIT_JUMP(OP_JUMP_IF_FALSE);
     EMIT_BYTE(OP_POP);
@@ -565,13 +547,12 @@ stmt_if(Compiler *c)
     PATCH_JUMP(else_jump);
 }
 
-static void
-stmt_when(Compiler *c)
+STATEMENT(when)
 {
-    consume(c, TOKEN_LEFT_PAREN, "Expect '(' after 'when'");
+    consume(c, TOKEN_LEFT_PAREN);
     expression(c);
-    consume(c, TOKEN_RIGHT_PAREN, "Expect ')' after value");
-    consume(c, TOKEN_LEFT_BRACE, "Expect '{' before when cases");
+    consume(c, TOKEN_RIGHT_PAREN);
+    consume(c, TOKEN_LEFT_BRACE);
 
     int state = 0; /* 0: before all cases, 1: before else, 2: after else */
     int case_ends[MAX_WHEN_CASES];
@@ -585,8 +566,8 @@ stmt_when(Compiler *c)
         {
             if (state == 2)
             {
-                PARSER_ERROR("Can't have another case or else after the else "
-                             "case.");
+                PARSER_ERROR("can't have another case or else after the else "
+                             "case");
             }
 
             if (state == 1)
@@ -601,7 +582,7 @@ stmt_when(Compiler *c)
                 state = 1;
                 EMIT_BYTE(OP_DUP);
                 expression(c);
-                consume(c, TOKEN_ARROW, "Expect '->' after case value");
+                consume(c, TOKEN_ARROW);
                 EMIT_BYTE(OP_EQUAL);
                 prev_case_skip = EMIT_JUMP(OP_JUMP_IF_FALSE);
                 EMIT_BYTE(OP_POP);
@@ -609,7 +590,7 @@ stmt_when(Compiler *c)
             else
             {
                 state = 2;
-                consume(c, TOKEN_ARROW, "Expect '->' after else");
+                consume(c, TOKEN_ARROW);
                 prev_case_skip = -1;
             }
         }
@@ -617,7 +598,7 @@ stmt_when(Compiler *c)
         {
             if (state == 0)
             {
-                PARSER_ERROR("Can't have statements before any case.");
+                PARSER_ERROR("can't have statements before any case");
             }
             statement(c);
         }
@@ -638,13 +619,12 @@ stmt_when(Compiler *c)
     EMIT_BYTE(OP_POP);
 }
 
-static void
-stmt_while(Compiler *c)
+STATEMENT(while)
 {
     int loop_start = c->p->compiling_chunk->count;
-    consume(c, TOKEN_LEFT_PAREN, "Expected '(' after 'while'");
+    consume(c, TOKEN_LEFT_PAREN);
     expression(c);
-    consume(c, TOKEN_RIGHT_PAREN, "Expected ')' after condition");
+    consume(c, TOKEN_RIGHT_PAREN);
 
     int exit_jump = EMIT_JUMP(OP_JUMP_IF_FALSE);
     EMIT_BYTE(OP_POP);
@@ -659,7 +639,7 @@ static void
 expression_statement(Compiler *c)
 {
     expression(c);
-    consume(c, TOKEN_SEMICOLON, "Expect ';' after expression.");
+    consume(c, TOKEN_SEMICOLON);
     EMIT_BYTE(OP_POP);
 }
 
@@ -668,30 +648,35 @@ block(Compiler *c)
 {
     while (!CHECK_TYPE(TOKEN_RIGHT_BRACE) && !CHECK_TYPE(TOKEN_EOF))
     {
-        declaration(c);
+        definition(c);
     }
 
-    consume(c, TOKEN_RIGHT_BRACE, "Expect '}' after block.");
+    consume(c, TOKEN_RIGHT_BRACE);
 }
 
+// Compiles a simple statement. These can only appear at the top-level or
+// within curly blocks. Simple statements exclude variable binding statements
+// like "var" and "class" which are not allowed directly in places like the
+// branches of an "if" statement. Statements, unlike expressions, do not leave a
+// value on the vm stack.
 static void
 statement(Compiler *c)
 {
     if (MATCH_TOKEN(TOKEN_PRINT))
     {
-        stmt_print(c);
+        BIND_STATEMENT(print);
     }
     else if (MATCH_TOKEN(TOKEN_IF))
     {
-        stmt_if(c);
+        BIND_STATEMENT(if);
     }
     else if (MATCH_TOKEN(TOKEN_WHEN))
     {
-        stmt_when(c);
+        BIND_STATEMENT(when);
     }
     else if (MATCH_TOKEN(TOKEN_WHILE))
     {
-        stmt_while(c);
+        BIND_STATEMENT(while);
     }
     else if (MATCH_TOKEN(TOKEN_LEFT_BRACE))
     {
@@ -705,12 +690,15 @@ statement(Compiler *c)
     }
 }
 
+// Compiles a "definition". These are the statements that bind new variables.
+// They can only appear at the top level of a block and are prohibited in places
+// like the non-curly body of an if or while.
 static void
-declaration(Compiler *c)
+definition(Compiler *c)
 {
     if (MATCH_TOKEN(TOKEN_VAR))
     {
-        dec_var(c);
+        variable_definition(c);
     }
     else
     {
@@ -723,42 +711,26 @@ declaration(Compiler *c)
     }
 }
 
-Compiler *
-compiler_init(Parser *p)
-{
-    Compiler *c    = calloc(1, sizeof(Compiler));
-    c->local_count = 0;
-    c->scope_depth = 0;
-    c->p           = p;
-    return c;
-}
-
-Parser *
-parser_init(Scanner *s, QxlChunk *c, QxlHashTable *vm_global_strings)
-{
-    Parser *p            = calloc(1, sizeof(Parser));
-    p->s                 = s;
-    p->had_error         = false;
-    p->panic_mode        = false;
-    p->compiling_chunk   = c;
-    p->vm_global_strings = vm_global_strings;
-
-    return p;
-}
-
 bool
 compile(QxlChunk *chunk, const char *src, QxlHashTable *vm_global_strings)
 {
-    Parser *p   = parser_init(scanner_init(src), chunk, vm_global_strings);
-    Compiler *c = compiler_init(p);
+    Parser *p = &(Parser){.s                 = scanner_init(src),
+                          .had_error         = false,
+                          .panic_mode        = false,
+                          .compiling_chunk   = chunk,
+                          .vm_global_strings = vm_global_strings};
+
+    Compiler *c = &(Compiler){
+        .local_count = 0,
+        .scope_depth = 0,
+        .p           = p,
+    };
 
     advance(c);
-    // expression(p);
-    // consume(p, TOKEN_EOF, "Expect end of expression.");
 
     while (!MATCH_TOKEN(TOKEN_EOF))
     {
-        declaration(c);
+        definition(c);
     }
 
     EMIT_RETURN();
