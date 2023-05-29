@@ -63,7 +63,7 @@ Qxl_read_source(const char *path)
 static void
 Qxl_run_vm(const char *path)
 {
-    const char *buf     = Qxl_read_source(path);
+    char *buf           = Qxl_read_source(path);
     InterpretResult res = vm_interpret(vm_init(), buf);
     free(buf);
 
