@@ -18,19 +18,11 @@ extern "C"
 #define DEBUG_TRACE_COMPILING_CHUNK
 
 #define Qxl_INTERCEPT_ERROR(r, i, c)                                           \
-    \ 
-    if (r == i) exit(c)
-
-#define Qxl_ERROR(...)                                                         \
-    \                   
-    do                                                                         \
     {                                                                          \
-        if (__VA_ARGS__)                                                       \
-        {                                                                      \
-            (void)fprintf(stderr, __VA_ARGS__);                                \
-        }                                                                      \
-    }                                                                          \
-    while (0)
+        if (r == i) exit(c);                                                   \
+    }
+
+#define Qxl_ERROR(...) fprintf(stderr, __VA_ARGS__)
 
 #ifdef __cplusplus
 }
