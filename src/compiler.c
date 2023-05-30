@@ -43,9 +43,8 @@
       CHECK_TYPE(TOKEN_NIL) || CHECK_TYPE(TOKEN_NUMBER) ||                     \
       CHECK_TYPE(TOKEN_STRING)))
 #define CONST_IDENTIFIER(token)                                                \
-    (make_constant(                                                            \
-        c, OBJECT_VAL(QxlObjectString_copy(c->p->vm_global_strings,            \
-                                           token.start, token.length))))
+    (make_constant(c, OBJECT_VAL(QxlString_copy(c->p->vm_global_strings,       \
+                                                token.start, token.length))))
 #define MARK_INITIALIZED() c->locals[c->local_count - 1].depth = c->scope_depth
 #define DEFINE_VAR(v)                                                          \
     {                                                                          \
@@ -267,13 +266,13 @@ number(Compiler *c, bool can_assign)
 
 static void template(Compiler *c, bool can_assign)
 {
-    QxlObjectString *s = QxlObjectString_copy(c->p->vm_global_strings, "", 0);
+    QxlString *s = QxlString_copy(c->p->vm_global_strings, "", 0);
     EMIT_CONST(OBJECT_VAL(s));
     do
     {
-        QxlObjectString *s =
-            QxlObjectString_copy(c->p->vm_global_strings, c->p->prev.start + 1,
-                                 c->p->prev.length - 3);
+        QxlString *s =
+            QxlString_copy(c->p->vm_global_strings, c->p->prev.start + 1,
+                           c->p->prev.length - 3);
         EMIT_CONST(OBJECT_VAL(s));
         EMIT_BYTE(OP_ADD);
         expression(c);
@@ -288,8 +287,8 @@ static void template(Compiler *c, bool can_assign)
 static void
 string(Compiler *c, bool can_assign)
 {
-    QxlObjectString *s = QxlObjectString_copy(
-        c->p->vm_global_strings, c->p->prev.start + 1, c->p->prev.length - 2);
+    QxlString *s = QxlString_copy(c->p->vm_global_strings, c->p->prev.start + 1,
+                                  c->p->prev.length - 2);
     EMIT_CONST(OBJECT_VAL(s));
 }
 

@@ -4,7 +4,7 @@
 #include "include/value.h"
 
 static HashTableEntry *
-find_entry(HashTableEntry *entries, int cap, QxlObjectString *k)
+find_entry(HashTableEntry *entries, int cap, QxlString *k)
 {
     HashTableEntry *tombstone = NULL;
     uint32_t index            = k->hash % cap;
@@ -79,7 +79,7 @@ QxlHashTable_free(QxlHashTable *t)
 }
 
 bool
-QxlHashTable_put(QxlHashTable *t, QxlObjectString *k, QxlValue v)
+QxlHashTable_put(QxlHashTable *t, QxlString *k, QxlValue v)
 {
     if (t->count + 1 > t->cap * Qxl_COLLECTION_MAX_LOAD)
     {
@@ -111,7 +111,7 @@ QxlHashTable_merge(QxlHashTable *from, QxlHashTable *to)
 }
 
 bool
-QxlHashTable_get(QxlHashTable *t, QxlObjectString *k, QxlValue *v)
+QxlHashTable_get(QxlHashTable *t, QxlString *k, QxlValue *v)
 {
     if (t->count == 0) return false;
 
@@ -124,7 +124,7 @@ QxlHashTable_get(QxlHashTable *t, QxlObjectString *k, QxlValue *v)
 }
 
 bool
-QxlHashTable_remove(QxlHashTable *t, QxlObjectString *k)
+QxlHashTable_remove(QxlHashTable *t, QxlString *k)
 {
     if (t->count == 0) return false;
 
@@ -137,7 +137,7 @@ QxlHashTable_remove(QxlHashTable *t, QxlObjectString *k)
     return true;
 }
 
-QxlObjectString *
+QxlString *
 QxlHashTable_find_string(QxlHashTable *t, const char *chars, int length,
                          uint32_t hash)
 {

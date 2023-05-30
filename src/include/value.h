@@ -9,7 +9,7 @@ extern "C"
 #endif
 
     typedef struct QxlObject QxlObject;
-    typedef struct QxlObjectString QxlObjectString;
+    typedef struct QxlString QxlString;
 
     typedef enum
     {

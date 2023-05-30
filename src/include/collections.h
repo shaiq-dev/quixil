@@ -13,7 +13,7 @@ extern "C"
 
     typedef struct
     {
-        QxlObjectString *key;
+        QxlString *key;
         QxlValue value;
     } HashTableEntry;
 
@@ -26,11 +26,11 @@ extern "C"
 
     void QxlHashTable_init(QxlHashTable *t);
     void QxlHashTable_free(QxlHashTable *t);
-    bool QxlHashTable_put(QxlHashTable *t, QxlObjectString *k, QxlValue v);
+    bool QxlHashTable_put(QxlHashTable *t, QxlString *k, QxlValue v);
     void QxlHashTable_merge(QxlHashTable *from, QxlHashTable *to);
-    bool QxlHashTable_get(QxlHashTable *t, QxlObjectString *k, QxlValue *v);
-    bool QxlHashTable_remove(QxlHashTable *t, QxlObjectString *k);
-    QxlObjectString *QxlHashTable_find_string(QxlHashTable *t,
+    bool QxlHashTable_get(QxlHashTable *t, QxlString *k, QxlValue *v);
+    bool QxlHashTable_remove(QxlHashTable *t, QxlString *k);
+    QxlString *QxlHashTable_find_string(QxlHashTable *t,
                                               const char *chars, int length,
                                               uint32_t hash);
 

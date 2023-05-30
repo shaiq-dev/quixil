@@ -17,26 +17,24 @@ allocate_object(size_t size, QxlObjectType type, char *obj_name)
     return object;
 }
 
-static QxlObjectString *
+static QxlString *
 allocate_string(QxlHashTable *vm_global_strings, char *chars, int length,
                 uint32_t hash)
 {
-    QxlObjectString *string =
-        ALLOCATE_OBJECT(QxlObjectString, OBJ_STRING, "str");
-    string->length = length;
-    string->chars  = chars;
-    string->hash   = hash;
+    QxlString *string = ALLOCATE_OBJECT(QxlString, OBJ_STRING, "str");
+    string->length    = length;
+    string->chars     = chars;
+    string->hash      = hash;
     QxlHashTable_put(vm_global_strings, string, NIL_VAL);
     return string;
 }
 
-QxlObjectString *
-QxlObjectString_copy(QxlHashTable *vm_global_strings, const char *chars,
-                     int length)
+QxlString *
+QxlString_copy(QxlHashTable *vm_global_strings, const char *chars, int length)
 {
     uint32_t hash = Qxl_hash_str(chars, length);
 
-    QxlObjectString *interned =
+    QxlString *interned =
         QxlHashTable_find_string(vm_global_strings, chars, length, hash);
     if (interned != NULL) return interned;
 
@@ -46,11 +44,11 @@ QxlObjectString_copy(QxlHashTable *vm_global_strings, const char *chars,
     return allocate_string(vm_global_strings, heap_chars, length, hash);
 }
 
-QxlObjectString *
-QxlObjectString_take(QxlHashTable *vm_global_strings, char *chars, int length)
+QxlString *
+QxlString_take(QxlHashTable *vm_global_strings, char *chars, int length)
 {
     uint32_t hash = Qxl_hash_str(chars, length);
-    QxlObjectString *interned =
+    QxlString *interned =
         QxlHashTable_find_string(vm_global_strings, chars, length, hash);
     if (interned != NULL)
     {
@@ -67,15 +65,19 @@ QxlObject_print(QxlValue value)
     switch (OBJECT_TYPE(value))
     {
     case OBJ_STRING:
-        printf("%s", OBJECT_AS_CSTRING(value));
+        printf("%s", AS_CSTRING(value));
+        break;
+    case OBJ_FUNCTION:
+        printf("<function %s at %p>", AS_FUNCTION(value)->name->chars,
+               (void *)&value);
         break;
     }
 }
 
 // String Methods
-QxlObjectString *
-QxlString_concatenate(QxlHashTable *vm_global_strings, QxlObjectString *a,
-                      QxlObjectString *b)
+QxlString *
+QxlString_concatenate(QxlHashTable *vm_global_strings, QxlString *a,
+                      QxlString *b)
 {
     int length  = a->length + b->length;
     char *chars = QxlMem_Allocate(char, length + 1);
@@ -83,11 +85,11 @@ QxlString_concatenate(QxlHashTable *vm_global_strings, QxlObjectString *a,
     memcpy(chars + a->length, b->chars, b->length);
     chars[length] = '\0';
 
-    return QxlObjectString_take(vm_global_strings, chars, length);
+    return QxlString_take(vm_global_strings, chars, length);
 }
 
-QxlObjectString *
-QxlString_repeat(QxlHashTable *vm_global_strings, QxlObjectString *s, int count)
+QxlString *
+QxlString_repeat(QxlHashTable *vm_global_strings, QxlString *s, int count)
 {
     size_t length = s->length * count;
     char *chars   = QxlMem_Allocate(char, length + 1);
@@ -95,7 +97,7 @@ QxlString_repeat(QxlHashTable *vm_global_strings, QxlObjectString *s, int count)
 
     if (count <= 0 || s->length == 0)
     {
-        return QxlObjectString_take(vm_global_strings, "", 0);
+        return QxlString_take(vm_global_strings, "", 0);
     }
 
     for (size_t i = 0; i < count; i++)
@@ -105,5 +107,15 @@ QxlString_repeat(QxlHashTable *vm_global_strings, QxlObjectString *s, int count)
     }
     chars[length] = '\0';
 
-    return QxlObjectString_take(vm_global_strings, chars, length);
+    return QxlString_take(vm_global_strings, chars, length);
+}
+
+QxlFunction *
+QxlFunction_new()
+{
+    QxlFunction *fn = ALLOCATE_OBJECT(QxlFunction, OBJ_FUNCTION, "function");
+    fn->arity       = 0;
+    fn->name        = NULL;
+    QxlChunk_init(&fn->chunk);
+    return fn;
 }

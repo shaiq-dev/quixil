@@ -1,6 +1,7 @@
 #ifndef Qxl_OBJECT_H
 #define Qxl_OBJECT_H
 
+#include "chunk.h"
 #include "collections.h"
 #include "quixil.h"
 #include "value.h"
@@ -11,13 +12,16 @@ extern "C"
 #endif
 
 #define OBJECT_TYPE(value) (AS_OBJECT(value)->type)
-#define OBJECT_IS_STRING(value) is_object_type(value, OBJ_STRING)
-#define OBJECT_AS_STRING(value) ((QxlObjectString *)AS_OBJECT(value))
-#define OBJECT_AS_CSTRING(value) (((QxlObjectString *)AS_OBJECT(value))->chars)
+#define IS_STRING(value) is_object_type(value, OBJ_STRING)
+#define IS_FUNCTION(value) is_object_type(value, OBJ_FUNCTION)
+#define AS_STRING(value) ((QxlString *)AS_OBJECT(value))
+#define AS_CSTRING(value) (((QxlString *)AS_OBJECT(value))->chars)
+#define AS_FUNCTION(value) ((QxlFunction *)AS_OBJECT(value))
 
     typedef enum
     {
         OBJ_STRING,
+        OBJ_FUNCTION
     } QxlObjectType;
 
     struct QxlObject
@@ -27,13 +31,21 @@ extern "C"
         char *obj_name;
     };
 
-    struct QxlObjectString
+    struct QxlString
     {
         QxlObject obj;
         int length;
         char *chars;
         uint32_t hash;
     };
+
+    typedef struct
+    {
+        QxlObject obj;
+        int arity;
+        QxlChunk chunk;
+        QxlString *name;
+    } QxlFunction;
 
     static inline bool
     is_object_type(QxlValue value, QxlObjectType type)
@@ -42,17 +54,20 @@ extern "C"
     }
 
     void QxlObject_print(QxlValue value);
-    QxlObjectString *QxlObjectString_copy(QxlHashTable *vm_global_strings,
-                                          const char *chars, int length);
-    QxlObjectString *QxlObjectString_take(QxlHashTable *vm_global_strings,
-                                          char *chars, int length);
 
-    // String Methods
-    QxlObjectString *QxlString_concatenate(QxlHashTable *vm_global_strings,
-                                           QxlObjectString *a,
-                                           QxlObjectString *b);
-    QxlObjectString *QxlString_repeat(QxlHashTable *vm_global_strings,
-                                      QxlObjectString *s, int count);
+    // String Object
+    QxlString *QxlString_copy(QxlHashTable *vm_global_strings,
+                              const char *chars, int length);
+    QxlString *QxlString_take(QxlHashTable *vm_global_strings, char *chars,
+                              int length);
+
+    QxlString *QxlString_concatenate(QxlHashTable *vm_global_strings,
+                                     QxlString *a, QxlString *b);
+    QxlString *QxlString_repeat(QxlHashTable *vm_global_strings, QxlString *s,
+                                int count);
+
+    //   Function Object
+    QxlFunction *QxlFunction_new();
 
 #ifdef __cplusplus
 }

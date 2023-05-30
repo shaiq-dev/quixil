@@ -64,7 +64,7 @@ run(VM *vm)
 {
 #define READ_BYTE() (*vm->ip++)
 #define READ_CONSTANT() (vm->chunk->constants.values[READ_BYTE()])
-#define READ_STRING() OBJECT_AS_STRING(READ_CONSTANT())
+#define READ_STRING() AS_STRING(READ_CONSTANT())
 #define READ_SHORT() (vm->ip += 2, (uint16_t)((vm->ip[-2] << 8) | vm->ip[-1]))
 #define BINARY_OP(value_type, op)                                              \
     do                                                                         \
@@ -142,48 +142,44 @@ run(VM *vm)
         case OP_ADD:
         {
             // String concatination
-            if (OBJECT_IS_STRING(STACK_PEEK(0)) &&
-                OBJECT_IS_STRING(STACK_PEEK(1)))
+            if (IS_STRING(STACK_PEEK(0)) && IS_STRING(STACK_PEEK(1)))
             {
-                QxlValue b           = vm_stack_pop(vm);
-                QxlValue a           = vm_stack_pop(vm);
-                QxlObjectString *str = QxlString_concatenate(
-                    &vm->strings, OBJECT_AS_STRING(a), OBJECT_AS_STRING(b));
+                QxlValue b     = vm_stack_pop(vm);
+                QxlValue a     = vm_stack_pop(vm);
+                QxlString *str = QxlString_concatenate(
+                    &vm->strings, AS_STRING(a), AS_STRING(b));
                 vm_stack_push(vm, OBJECT_VAL(str));
             }
-            else if ((OBJECT_IS_STRING(STACK_PEEK(0)) &&
-                      IS_NUMBER(STACK_PEEK(1))) ||
-                     (IS_NUMBER(STACK_PEEK(0)) &&
-                      OBJECT_IS_STRING(STACK_PEEK(1))))
+            else if ((IS_STRING(STACK_PEEK(0)) && IS_NUMBER(STACK_PEEK(1))) ||
+                     (IS_NUMBER(STACK_PEEK(0)) && IS_STRING(STACK_PEEK(1))))
             {
                 QxlValue str_op;
-                QxlObjectString *num_op, *str;
+                QxlString *num_op, *str;
                 if (IS_OBJECT(STACK_PEEK(0)))
                 {
                     str_op   = vm_stack_pop(vm);
                     char *ds = Qxl_num_as_str(AS_NUMBER(vm_stack_pop(vm)));
-                    num_op = QxlObjectString_copy(&vm->strings, ds, strlen(ds));
-                    str    = QxlString_concatenate(&vm->strings, num_op,
-                                                   OBJECT_AS_STRING(str_op));
+                    num_op   = QxlString_copy(&vm->strings, ds, strlen(ds));
+                    str      = QxlString_concatenate(&vm->strings, num_op,
+                                                     AS_STRING(str_op));
                 }
                 else
                 {
                     char *ds = Qxl_num_as_str(AS_NUMBER(vm_stack_pop(vm)));
-                    num_op = QxlObjectString_copy(&vm->strings, ds, strlen(ds));
-                    str_op = vm_stack_pop(vm);
-                    str    = QxlString_concatenate(
-                        &vm->strings, OBJECT_AS_STRING(str_op), num_op);
+                    num_op   = QxlString_copy(&vm->strings, ds, strlen(ds));
+                    str_op   = vm_stack_pop(vm);
+                    str = QxlString_concatenate(&vm->strings, AS_STRING(str_op),
+                                                num_op);
                 }
                 vm_stack_push(vm, OBJECT_VAL(str));
             }
-            else if (OBJECT_IS_STRING(STACK_PEEK(0)) ||
-                     OBJECT_IS_STRING(STACK_PEEK(1)))
+            else if (IS_STRING(STACK_PEEK(0)) || IS_STRING(STACK_PEEK(1)))
             {
                 runtime_error(
                     vm,
                     "RuntimeError: Can only concatenate str (not '%s') to str",
                     Qxl_TYPE_NAME(
-                        STACK_PEEK(OBJECT_IS_STRING(STACK_PEEK(0)) ? 1 : 0)));
+                        STACK_PEEK(IS_STRING(STACK_PEEK(0)) ? 1 : 0)));
             }
             else
             {
@@ -200,13 +196,13 @@ run(VM *vm)
             break;
         case OP_MULTIPLY:
         {
-            if (OBJECT_IS_STRING(STACK_PEEK(0)) && IS_NUMBER(STACK_PEEK(1)) ||
-                IS_NUMBER(STACK_PEEK(0)) && OBJECT_IS_STRING(STACK_PEEK(1)))
+            if (IS_STRING(STACK_PEEK(0)) && IS_NUMBER(STACK_PEEK(1)) ||
+                IS_NUMBER(STACK_PEEK(0)) && IS_STRING(STACK_PEEK(1)))
             {
-                QxlValue l           = vm_stack_pop(vm);
-                QxlValue r           = vm_stack_pop(vm);
-                QxlObjectString *str = QxlString_repeat(
-                    &vm->strings, OBJECT_AS_STRING((IS_OBJECT(l) ? l : r)),
+                QxlValue l     = vm_stack_pop(vm);
+                QxlValue r     = vm_stack_pop(vm);
+                QxlString *str = QxlString_repeat(
+                    &vm->strings, AS_STRING((IS_OBJECT(l) ? l : r)),
                     AS_NUMBER(IS_OBJECT(l) ? r : l));
                 vm_stack_push(vm, OBJECT_VAL(str));
             }
@@ -249,14 +245,14 @@ run(VM *vm)
             break;
         case OP_DEFINE_GLOBAL:
         {
-            QxlObjectString *name = READ_STRING();
+            QxlString *name = READ_STRING();
             QxlHashTable_put(&vm->globals, name, STACK_PEEK(0));
             vm_stack_pop(vm);
             break;
         }
         case OP_GET_GLOBAL:
         {
-            QxlObjectString *name = READ_STRING();
+            QxlString *name = READ_STRING();
             QxlValue value;
             if (!QxlHashTable_get(&vm->globals, name, &value))
             {
@@ -268,7 +264,7 @@ run(VM *vm)
         }
         case OP_SET_GLOBAL:
         {
-            QxlObjectString *name = READ_STRING();
+            QxlString *name = READ_STRING();
             if (QxlHashTable_put(&vm->globals, name, STACK_PEEK(0)))
             {
                 QxlHashTable_remove(&vm->globals, name);
