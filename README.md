@@ -1,6 +1,8 @@
 
 ## Quixil is a compact, efficient, class based programming language. 
 
+ <img src="https://img.shields.io/badge/-In%20Development-%23D40749?style=for-the-badge" />
+
 <br />
 
 At it's core is a bytecode virtual machine just like JVM written in C. Javascript like syntax with a dash of Python.
