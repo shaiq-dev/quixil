@@ -11,8 +11,6 @@ extern "C"
 {
 #endif
 
-#define UINT8_COUNT (UINT8_MAX + 1)
-
     typedef struct
     {
         Scanner *s;
@@ -20,7 +18,6 @@ extern "C"
         Token prev;
         bool had_error;
         bool panic_mode;
-        QxlChunk *compiling_chunk;
 
         // Parsers needs access to the vm's strings table to perform string
         // interning.
@@ -50,12 +47,22 @@ extern "C"
         int depth;
     } Local;
 
-    typedef struct
+    typedef enum
     {
+        TYPE_MAIN,
+        TYPE_NATIVE,
+        TYPE_GENERIC
+    } FunctionType;
+
+    typedef struct compiler_t
+    {
+        QxlFunction *fn;
+        FunctionType type;
         Local locals[UINT8_COUNT];
         int local_count;
         int scope_depth;
         Parser *p;
+        struct compiler_t *parent;
     } Compiler;
 
     typedef void (*ParseFn)(Compiler *c, bool can_assign);
@@ -67,8 +74,7 @@ extern "C"
         Precedence precedence;
     } ParseRule;
 
-    bool compile(QxlChunk *chunk, const char *src,
-                 QxlHashTable *vm_global_strings);
+    QxlFunction *compile(const char *src, QxlHashTable *vm_global_strings);
 
 #ifdef __cplusplus
 }

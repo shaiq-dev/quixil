@@ -5,9 +5,7 @@
 #define BIND_STATEMENT(type) stmt_##type(c)
 #define PARSER_ERROR(m) error_at(c->p, &c->p->prev, (m))
 #define PARSER_ERROR_AT_CUR(m) error_at(c->p, &c->p->cur, (m))
-#define COMPILING_CHUNK c->p->compiling_chunk
-#define EMIT_BYTE(byte)                                                        \
-    QxlChunk_add(c->p->compiling_chunk, (byte), c->p->prev.line)
+#define EMIT_BYTE(byte) QxlChunk_add(&c->fn->chunk, (byte), c->p->prev.line)
 #define EMIT_RETURN() EMIT_BYTE(OP_RETURN)
 #define EMIT_BYTES(byte_1, byte_2) (EMIT_BYTE(byte_1), EMIT_BYTE(byte_2))
 #define EMIT_CONST(val) EMIT_BYTES(OP_CONSTANT, make_constant(c, val))
@@ -16,25 +14,25 @@
         EMIT_BYTE(inst);                                                       \
         EMIT_BYTE(0xff);                                                       \
         EMIT_BYTE(0xff);                                                       \
-        COMPILING_CHUNK->count - 2;                                            \
+        c->fn->chunk.count - 2;                                                \
     })
 #define EMIT_LOOP(start)                                                       \
     {                                                                          \
         EMIT_BYTE(OP_LOOP);                                                    \
-        int offset = c->p->compiling_chunk->count - (start) + 2;               \
+        int offset = c->fn->chunk.count - (start) + 2;                         \
         if (offset > UINT16_MAX) PARSER_ERROR("loop body too large");          \
         EMIT_BYTE((offset >> 8) & 0xff);                                       \
         EMIT_BYTE(offset & 0xff);                                              \
     }
 #define PATCH_JUMP(offset)                                                     \
     {                                                                          \
-        int jump = COMPILING_CHUNK->count - (offset)-2;                        \
+        int jump = c->fn->chunk.count - (offset)-2;                            \
         if (jump > UINT16_MAX)                                                 \
         {                                                                      \
             PARSER_ERROR("too much code to jump over");                        \
         }                                                                      \
-        COMPILING_CHUNK->code[offset]     = (jump >> 8) & 0xff;                \
-        COMPILING_CHUNK->code[offset + 1] = jump & 0xff;                       \
+        c->fn->chunk.code[offset]     = (jump >> 8) & 0xff;                    \
+        c->fn->chunk.code[offset + 1] = jump & 0xff;                           \
     }
 #define CHECK_TYPE(_type) (c->p->cur.type == (_type))
 #define MATCH_TOKEN(_type) (CHECK_TYPE(_type) ? (advance(c), true) : false)
@@ -214,7 +212,7 @@ expression(Compiler *c)
 static uint8_t
 make_constant(Compiler *c, QxlValue value)
 {
-    int constant = QxlChunk_add_constant(c->p->compiling_chunk, value);
+    int constant = QxlChunk_add_constant(&c->fn->chunk, value);
     if (constant > UINT8_MAX)
     {
         PARSER_ERROR("too many constants in one chunk");
@@ -620,7 +618,7 @@ STATEMENT(when)
 
 STATEMENT(while)
 {
-    int loop_start = c->p->compiling_chunk->count;
+    int loop_start = c->fn->chunk.count;
     consume(c, TOKEN_LEFT_PAREN);
     expression(c);
     consume(c, TOKEN_RIGHT_PAREN);
@@ -710,20 +708,29 @@ definition(Compiler *c)
     }
 }
 
-bool
-compile(QxlChunk *chunk, const char *src, QxlHashTable *vm_global_strings)
+static void
+Compiler_init(Compiler *c, Parser *p, Compiler *parent, FunctionType type)
+{
+    c->p           = p;
+    c->parent      = parent;
+    c->fn          = NULL;
+    c->scope_depth = 0;
+    c->local_count = 0;
+
+    c->fn   = QxlFunction_new();
+    c->type = type;
+}
+
+QxlFunction *
+compile(const char *src, QxlHashTable *vm_global_strings)
 {
     Parser *p = &(Parser){.s                 = scanner_init(src),
                           .had_error         = false,
                           .panic_mode        = false,
-                          .compiling_chunk   = chunk,
                           .vm_global_strings = vm_global_strings};
 
-    Compiler *c = &(Compiler){
-        .local_count = 0,
-        .scope_depth = 0,
-        .p           = p,
-    };
+    Compiler *c;
+    Compiler_init(c, p, NULL, TYPE_MAIN);
 
     advance(c);
 
@@ -736,9 +743,11 @@ compile(QxlChunk *chunk, const char *src, QxlHashTable *vm_global_strings)
 #ifdef DEBUG_TRACE_COMPILING_CHUNK
     if (!c->p->had_error)
     {
-        debug_disassemble_chunk(c->p->compiling_chunk, "COMPILING CHUNK");
+        debug_disassemble_chunk(&c->fn->chunk, c->fn->name != NULL
+                                                   ? c->fn->name->chars
+                                                   : "<script-main>");
     }
 #endif
 
-    return !c->p->had_error;
+    return c->p->had_error ? NULL : c->fn;
 }

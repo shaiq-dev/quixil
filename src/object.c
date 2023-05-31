@@ -68,6 +68,11 @@ QxlObject_print(QxlValue value)
         printf("%s", AS_CSTRING(value));
         break;
     case OBJ_FUNCTION:
+        if (AS_FUNCTION(value)->name == NULL)
+        {
+            printf("<script-main>");
+            return;
+        }
         printf("<function %s at %p>", AS_FUNCTION(value)->name->chars,
                (void *)&value);
         break;

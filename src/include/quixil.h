@@ -17,6 +17,8 @@ extern "C"
 #define DEBUG_TRACE_EXECUTION
 #define DEBUG_TRACE_COMPILING_CHUNK
 
+#define UINT8_COUNT (UINT8_MAX + 1)
+
 #define Qxl_INTERCEPT_ERROR(r, i, c)                                           \
     {                                                                          \
         if (r == i) exit(c);                                                   \
