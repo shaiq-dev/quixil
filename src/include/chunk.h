@@ -37,6 +37,7 @@ extern "C"
         OP_JUMP,
         OP_JUMP_IF_FALSE,
         OP_LOOP,
+        OP_CALL
     } OpCode;
 
     // Chunk represents the sequences of byte code
