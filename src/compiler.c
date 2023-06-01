@@ -8,9 +8,9 @@
 #define PARSER_ERROR(m) error_at(c->p, &c->p->prev, (m))
 #define PARSER_ERROR_AT_CUR(m) error_at(c->p, &c->p->cur, (m))
 #define EMIT_BYTE(byte) QxlChunk_add(&c->fn->chunk, (byte), c->p->prev.line)
-#define EMIT_RETURN() EMIT_BYTE(OP_RETURN)
 #define EMIT_BYTES(byte_1, byte_2) (EMIT_BYTE(byte_1), EMIT_BYTE(byte_2))
 #define EMIT_CONST(val) EMIT_BYTES(OP_CONSTANT, make_constant(c, val))
+#define EMIT_RETURN() EMIT_BYTES(OP_NIL, OP_RETURN)
 #define EMIT_JUMP(inst)                                                        \
     ({                                                                         \
         EMIT_BYTE(inst);                                                       \
@@ -67,6 +67,7 @@
 
 #define MAX_WHEN_CASES 256
 
+static void call(Compiler *c, bool can_assign);
 static void unary(Compiler *c, bool can_assign);
 static void grouping(Compiler *c, bool can_assign);
 static void binary(Compiler *c, bool can_assign);
@@ -84,7 +85,7 @@ static Compiler *Compiler_init(Parser *p, Compiler *parent, FunctionType type);
 static QxlFunction *Compiler_end(Compiler *c);
 
 ParseRule rules[] = {
-    [TOKEN_LEFT_PAREN]    = {grouping, NULL, PREC_NONE},
+    [TOKEN_LEFT_PAREN]    = {grouping, call, PREC_CALL},
     [TOKEN_RIGHT_PAREN]   = {NULL, NULL, PREC_NONE},
     [TOKEN_LEFT_BRACE]    = {NULL, NULL, PREC_NONE},
     [TOKEN_RIGHT_BRACE]   = {NULL, NULL, PREC_NONE},
@@ -241,6 +242,33 @@ scope_end(Compiler *c)
         EMIT_BYTE(OP_POP);
         c->local_count--;
     }
+}
+
+static uint8_t
+argument_list(Compiler *c)
+{
+    uint8_t arg_count = 0;
+    if (!CHECK_TYPE(TOKEN_RIGHT_PAREN))
+    {
+        do
+        {
+            expression(c);
+            if (arg_count == 255)
+            {
+                PARSER_ERROR("can't have more than 255 arguments");
+            }
+            arg_count++;
+        } while (MATCH_TOKEN(TOKEN_COMMA));
+    }
+    consume(c, TOKEN_RIGHT_PAREN);
+    return arg_count;
+}
+
+static void
+call(Compiler *c, bool can_assign)
+{
+    uint8_t arg_count = argument_list(c);
+    EMIT_BYTES(OP_CALL, arg_count);
 }
 
 static void
@@ -684,6 +712,25 @@ STATEMENT(_while)
     EMIT_BYTE(OP_POP);
 }
 
+STATEMENT(_return)
+{
+    if (c->type == TYPE_MAIN)
+    {
+        PARSER_ERROR("can't \"return\" from top level code");
+    }
+
+    if (MATCH_TOKEN(TOKEN_SEMICOLON))
+    {
+        EMIT_RETURN();
+    }
+    else
+    {
+        expression(c);
+        consume(c, TOKEN_SEMICOLON);
+        EMIT_BYTE(OP_RETURN);
+    }
+}
+
 static void
 expression_statement(Compiler *c)
 {
@@ -726,6 +773,10 @@ statement(Compiler *c)
     else if (MATCH_TOKEN(TOKEN_WHILE))
     {
         BIND_STATEMENT(_while);
+    }
+    else if (MATCH_TOKEN(TOKEN_RETURN))
+    {
+        BIND_STATEMENT(_return);
     }
     else if (MATCH_TOKEN(TOKEN_LEFT_BRACE))
     {

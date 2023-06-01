@@ -1,7 +1,4 @@
 {
     "editor.formatOnSave": true,
     "clang-format.executable": "/opt/homebrew/bin/clang-format",
-    "files.associations": {
-        "value.h": "c"
-    },
 }

@@ -39,6 +39,22 @@ runtime_error(VM *vm, const char *format, ...)
     va_end(args);
     fputs("\n", stderr);
 
+    for (int i = vm->frame_count - 1; i >= 0; i--)
+    {
+        CallFrame *frame   = &vm->frames[i];
+        QxlFunction *fn    = frame->fn;
+        size_t instruction = frame->ip - fn->chunk.code - 1;
+        fprintf(stderr, "[Line %d] in ", fn->chunk.lines[instruction]);
+        if (fn->name == NULL)
+        {
+            fprintf(stderr, "<script-main>\n");
+        }
+        else
+        {
+            fprintf(stderr, "%s()\n", fn->name->chars);
+        }
+    }
+
     vm_stack_reset(vm);
 }
 
@@ -59,6 +75,46 @@ vm_free(VM *vm)
     // NOT_IMPLEMENTED
     QxlHashTable_free(&vm->globals);
     QxlHashTable_free(&vm->strings);
+}
+
+static bool
+call(VM *vm, QxlFunction *fn, int arg_count)
+{
+    if (arg_count != fn->arity)
+    {
+        runtime_error(vm, "%s() takes %d arguments but got %d", fn->name->chars,
+                      fn->arity, arg_count);
+        return false;
+    }
+
+    if (vm->frame_count == VM_FRAMES_MAX)
+    {
+        runtime_error(vm, "Stack overflow");
+        return false;
+    }
+
+    CallFrame *frame = &vm->frames[vm->frame_count++];
+    frame->fn        = fn;
+    frame->ip        = fn->chunk.code;
+    frame->slots     = vm->stack_top - arg_count - 1;
+    return true;
+}
+
+static bool
+call_value(VM *vm, QxlValue callee, int arg_count)
+{
+    if (IS_OBJECT(callee))
+    {
+        switch (OBJECT_TYPE(callee))
+        {
+        case OBJ_FUNCTION:
+            return call(vm, AS_FUNCTION(callee), arg_count);
+        default:
+            break; // Non-callable object type
+        }
+    }
+    runtime_error(vm, "can only call functions and classes");
+    return false;
 }
 
 static InterpretResult
@@ -308,9 +364,30 @@ run(VM *vm)
             frame->ip -= offset;
             break;
         }
+        case OP_CALL:
+        {
+            int arg_count = READ_BYTE();
+            if (!call_value(vm, STACK_PEEK(arg_count), arg_count))
+            {
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            frame = &vm->frames[vm->frame_count - 1];
+            break;
+        }
         case OP_RETURN:
         {
-            return INTERPRET_OK;
+            QxlValue result = vm_stack_pop(vm);
+            vm->frame_count--;
+            if (vm->frame_count == 0)
+            {
+                vm_stack_pop(vm);
+                return INTERPRET_OK;
+            }
+
+            vm->stack_top = frame->slots;
+            vm_stack_push(vm, result);
+            frame = &vm->frames[vm->frame_count - 1];
+            break;
         }
         }
     }
@@ -333,12 +410,7 @@ vm_interpret(VM *vm, const char *src)
     }
 
     vm_stack_push(vm, OBJECT_VAL(fn));
-
-    CallFrame *frame = &vm->frames[vm->frame_count++];
-    frame->fn        = fn;
-    frame->ip        = fn->chunk.code;
-    frame->slots     = vm->stack;
-
+    call(vm, fn, 0);
     return run(vm);
 }
 
