@@ -1,8 +1,10 @@
 #include "include/compiler.h"
 #include "include/debug.h"
 
-#define STATEMENT(type) static void stmt_##type(Compiler *c)
-#define BIND_STATEMENT(type) stmt_##type(c)
+#define STATEMENT(type) static void stmt##type(Compiler *c)
+#define DEFINITION(type) static void def##type(Compiler *c)
+#define BIND_STATEMENT(type) stmt##type(c)
+#define BIND_DEFINITION(type) def##type(c)
 #define PARSER_ERROR(m) error_at(c->p, &c->p->prev, (m))
 #define PARSER_ERROR_AT_CUR(m) error_at(c->p, &c->p->cur, (m))
 #define EMIT_BYTE(byte) QxlChunk_add(&c->fn->chunk, (byte), c->p->prev.line)
@@ -43,11 +45,14 @@
 #define CONST_IDENTIFIER(token)                                                \
     (make_constant(c, OBJECT_VAL(QxlString_copy(c->p->vm_global_strings,       \
                                                 token.start, token.length))))
-#define MARK_INITIALIZED() c->locals[c->local_count - 1].depth = c->scope_depth
+#define MARK_INITIALIZED()                                                     \
+    if (c->scope_depth > 0) c->locals[c->local_count - 1].depth = c->scope_depth
 #define DEFINE_VAR(v)                                                          \
     {                                                                          \
         if (c->scope_depth > 0)                                                \
+        {                                                                      \
             MARK_INITIALIZED();                                                \
+        }                                                                      \
         else                                                                   \
             EMIT_BYTES(OP_DEFINE_GLOBAL, v);                                   \
     }
@@ -74,6 +79,9 @@ static void literal(Compiler *c, bool can_assign);
 static void variable(Compiler *c, bool can_assign);
 static void statement(Compiler *c);
 static void definition(Compiler *c);
+static void block(Compiler *c);
+static Compiler *Compiler_init(Parser *p, Compiler *parent, FunctionType type);
+static QxlFunction *Compiler_end(Compiler *c);
 
 ParseRule rules[] = {
     [TOKEN_LEFT_PAREN]    = {grouping, NULL, PREC_NONE},
@@ -462,7 +470,7 @@ synchronize(Compiler *c)
     }
 }
 
-// Declerations
+// Defintions
 static void
 add_local(Compiler *c, Token name)
 {
@@ -478,9 +486,8 @@ add_local(Compiler *c, Token name)
     local->depth = -1;
 }
 
-// Compiles a "var" variable definition statement
-static void
-variable_definition(Compiler *c)
+static uint8_t
+parse_variable(Compiler *c)
 {
     consume(c, TOKEN_IDENTIFIER);
     if (c->scope_depth != 0)
@@ -505,7 +512,52 @@ variable_definition(Compiler *c)
         add_local(c, *name);
     }
 
-    uint8_t global = c->scope_depth > 0 ? 0 : CONST_IDENTIFIER(c->p->prev);
+    return c->scope_depth > 0 ? 0 : CONST_IDENTIFIER(c->p->prev);
+}
+
+static void
+define_function(Compiler *parent, FunctionType type)
+{
+    Compiler *c = Compiler_init(parent->p, parent, type);
+    SCOPE_BEGIN();
+
+    consume(c, TOKEN_LEFT_PAREN);
+    if (!CHECK_TYPE(TOKEN_RIGHT_PAREN))
+    {
+        do
+        {
+            c->fn->arity++;
+            if (c->fn->arity > 255)
+            {
+                PARSER_ERROR_AT_CUR("can't have more than 255 parameters");
+            }
+            uint8_t constant = parse_variable(c);
+            DEFINE_VAR(constant);
+        } while (MATCH_TOKEN(TOKEN_COMMA));
+    }
+
+    consume(c, TOKEN_RIGHT_PAREN);
+    consume(c, TOKEN_LEFT_BRACE);
+    block(c);
+
+    QxlFunction *fn = Compiler_end(c);
+
+    c = parent;
+    EMIT_BYTES(OP_CONSTANT, make_constant(c, OBJECT_VAL(fn)));
+}
+
+DEFINITION(_function)
+{
+    uint8_t global = parse_variable(c);
+    MARK_INITIALIZED();
+    define_function(c, TYPE_GENERIC);
+    DEFINE_VAR(global);
+}
+
+// Compiles a "var" variable definition statement
+DEFINITION(_variable)
+{
+    uint8_t global = parse_variable(c);
     if (MATCH_TOKEN(TOKEN_EQUAL))
     {
         expression(c);
@@ -519,14 +571,14 @@ variable_definition(Compiler *c)
 }
 
 // Statements
-STATEMENT(print)
+STATEMENT(_print)
 {
     expression(c);
     consume(c, TOKEN_SEMICOLON);
     EMIT_BYTE(OP_PRINT);
 }
 
-STATEMENT(if)
+STATEMENT(_if)
 {
     consume(c, TOKEN_LEFT_PAREN);
     expression(c);
@@ -544,7 +596,7 @@ STATEMENT(if)
     PATCH_JUMP(else_jump);
 }
 
-STATEMENT(when)
+STATEMENT(_when)
 {
     consume(c, TOKEN_LEFT_PAREN);
     expression(c);
@@ -616,7 +668,7 @@ STATEMENT(when)
     EMIT_BYTE(OP_POP);
 }
 
-STATEMENT(while)
+STATEMENT(_while)
 {
     int loop_start = c->fn->chunk.count;
     consume(c, TOKEN_LEFT_PAREN);
@@ -661,19 +713,19 @@ statement(Compiler *c)
 {
     if (MATCH_TOKEN(TOKEN_PRINT))
     {
-        BIND_STATEMENT(print);
+        BIND_STATEMENT(_print);
     }
     else if (MATCH_TOKEN(TOKEN_IF))
     {
-        BIND_STATEMENT(if);
+        BIND_STATEMENT(_if);
     }
     else if (MATCH_TOKEN(TOKEN_WHEN))
     {
-        BIND_STATEMENT(when);
+        BIND_STATEMENT(_when);
     }
     else if (MATCH_TOKEN(TOKEN_WHILE))
     {
-        BIND_STATEMENT(while);
+        BIND_STATEMENT(_while);
     }
     else if (MATCH_TOKEN(TOKEN_LEFT_BRACE))
     {
@@ -693,9 +745,13 @@ statement(Compiler *c)
 static void
 definition(Compiler *c)
 {
-    if (MATCH_TOKEN(TOKEN_VAR))
+    if (MATCH_TOKEN(TOKEN_FUNCTION))
     {
-        variable_definition(c);
+        BIND_DEFINITION(_function);
+    }
+    else if (MATCH_TOKEN(TOKEN_VAR))
+    {
+        BIND_DEFINITION(_variable);
     }
     else
     {
@@ -708,17 +764,51 @@ definition(Compiler *c)
     }
 }
 
-static void
-Compiler_init(Compiler *c, Parser *p, Compiler *parent, FunctionType type)
+static Compiler *
+Compiler_init(Parser *p, Compiler *parent, FunctionType type)
 {
-    c->p           = p;
+    Compiler *c    = calloc(1, sizeof(struct compiler_t));
     c->parent      = parent;
+    c->p           = p;
     c->fn          = NULL;
+    c->type        = type;
     c->scope_depth = 0;
     c->local_count = 0;
 
-    c->fn   = QxlFunction_new();
-    c->type = type;
+    c->fn = QxlFunction_new();
+
+    if (type != TYPE_MAIN)
+    {
+        c->fn->name =
+            QxlString_copy(p->vm_global_strings, p->prev.start, p->prev.length);
+    }
+
+    Local *local       = &c->locals[c->local_count++];
+    local->depth       = 0;
+    local->name.start  = "";
+    local->name.length = 0;
+
+    return c;
+}
+
+static QxlFunction *
+Compiler_end(Compiler *c)
+{
+    EMIT_RETURN();
+    QxlFunction *fn = c->fn;
+
+#ifdef DEBUG_TRACE_COMPILING_CHUNK
+    if (!c->p->had_error)
+    {
+        debug_disassemble_chunk(&fn->chunk, fn->name != NULL ? fn->name->chars
+                                                             : "<script-main>");
+    }
+#endif
+
+    // [TODO] : Rest compiler to parent
+    // This is not working for some reason
+    // c = c->parent;
+    return fn;
 }
 
 QxlFunction *
@@ -729,8 +819,7 @@ compile(const char *src, QxlHashTable *vm_global_strings)
                           .panic_mode        = false,
                           .vm_global_strings = vm_global_strings};
 
-    Compiler *c;
-    Compiler_init(c, p, NULL, TYPE_MAIN);
+    Compiler *c = Compiler_init(p, NULL, TYPE_MAIN);
 
     advance(c);
 
@@ -739,15 +828,6 @@ compile(const char *src, QxlHashTable *vm_global_strings)
         definition(c);
     }
 
-    EMIT_RETURN();
-#ifdef DEBUG_TRACE_COMPILING_CHUNK
-    if (!c->p->had_error)
-    {
-        debug_disassemble_chunk(&c->fn->chunk, c->fn->name != NULL
-                                                   ? c->fn->name->chars
-                                                   : "<script-main>");
-    }
-#endif
-
-    return c->p->had_error ? NULL : c->fn;
+    QxlFunction *fn = Compiler_end(c);
+    return c->p->had_error ? NULL : fn;
 }

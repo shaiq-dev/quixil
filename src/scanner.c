@@ -46,7 +46,7 @@ get_identifier_type(Scanner *s)
             case 'o':
                 return check_keyword(s, 2, 1, "r", TOKEN_FOR);
             case 'u':
-                return check_keyword(s, 2, 6, "nction", TOKEN_FUNCTION);
+                return check_keyword(s, 2, 2, "nc", TOKEN_FUNCTION);
             }
         }
         break;
