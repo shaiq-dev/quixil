@@ -38,8 +38,8 @@ QxlChunk_add_constant(QxlChunk *chunk, QxlValue value)
 void
 QxlChunk_free(QxlChunk *chunk)
 {
-    QxlMem_Free(uint8_t, chunk->code, chunk->cap);
-    QxlMem_Free(int, chunk->lines, chunk->cap);
+    QxlMem_Free_Array(uint8_t, chunk->code, chunk->cap);
+    QxlMem_Free_Array(int, chunk->lines, chunk->cap);
     QxlValueList_free(&chunk->constants);
     QxlChunk_init(chunk);
 }

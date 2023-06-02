@@ -43,8 +43,8 @@
       CHECK_TYPE(TOKEN_NIL) || CHECK_TYPE(TOKEN_NUMBER) ||                     \
       CHECK_TYPE(TOKEN_STRING)))
 #define CONST_IDENTIFIER(token)                                                \
-    (make_constant(c, OBJECT_VAL(QxlString_copy(c->p->vm_global_strings,       \
-                                                token.start, token.length))))
+    (make_constant(                                                            \
+        c, OBJECT_VAL(QxlString_copy(c->p->vm, token.start, token.length))))
 #define MARK_INITIALIZED()                                                     \
     if (c->scope_depth > 0) c->locals[c->local_count - 1].depth = c->scope_depth
 #define DEFINE_VAR(v)                                                          \
@@ -300,13 +300,12 @@ number(Compiler *c, bool can_assign)
 
 static void template(Compiler *c, bool can_assign)
 {
-    QxlString *s = QxlString_copy(c->p->vm_global_strings, "", 0);
+    QxlString *s = QxlString_copy(c->p->vm, "", 0);
     EMIT_CONST(OBJECT_VAL(s));
     do
     {
-        QxlString *s =
-            QxlString_copy(c->p->vm_global_strings, c->p->prev.start + 1,
-                           c->p->prev.length - 3);
+        QxlString *s = QxlString_copy(c->p->vm, c->p->prev.start + 1,
+                                      c->p->prev.length - 3);
         EMIT_CONST(OBJECT_VAL(s));
         EMIT_BYTE(OP_ADD);
         expression(c);
@@ -321,8 +320,8 @@ static void template(Compiler *c, bool can_assign)
 static void
 string(Compiler *c, bool can_assign)
 {
-    QxlString *s = QxlString_copy(c->p->vm_global_strings, c->p->prev.start + 1,
-                                  c->p->prev.length - 2);
+    QxlString *s =
+        QxlString_copy(c->p->vm, c->p->prev.start + 1, c->p->prev.length - 2);
     EMIT_CONST(OBJECT_VAL(s));
 }
 
@@ -826,12 +825,11 @@ Compiler_init(Parser *p, Compiler *parent, FunctionType type)
     c->scope_depth = 0;
     c->local_count = 0;
 
-    c->fn = QxlFunction_new();
+    c->fn = QxlFunction_new(p->vm);
 
     if (type != TYPE_MAIN)
     {
-        c->fn->name =
-            QxlString_copy(p->vm_global_strings, p->prev.start, p->prev.length);
+        c->fn->name = QxlString_copy(p->vm, p->prev.start, p->prev.length);
     }
 
     Local *local       = &c->locals[c->local_count++];
@@ -863,12 +861,12 @@ Compiler_end(Compiler *c)
 }
 
 QxlFunction *
-compile(const char *src, QxlHashTable *vm_global_strings)
+compile(const char *src, VM *vm)
 {
-    Parser *p = &(Parser){.s                 = scanner_init(src),
-                          .had_error         = false,
-                          .panic_mode        = false,
-                          .vm_global_strings = vm_global_strings};
+    Parser *p = &(Parser){.s          = scanner_init(src),
+                          .had_error  = false,
+                          .panic_mode = false,
+                          .vm         = vm};
 
     Compiler *c = Compiler_init(p, NULL, TYPE_MAIN);
 

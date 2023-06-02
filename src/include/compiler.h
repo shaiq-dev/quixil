@@ -21,7 +21,7 @@ extern "C"
 
         // Parsers needs access to the vm's strings table to perform string
         // interning.
-        QxlHashTable *vm_global_strings;
+        VM *vm;
     } Parser;
 
     typedef enum
@@ -74,7 +74,7 @@ extern "C"
         Precedence precedence;
     } ParseRule;
 
-    QxlFunction *compile(const char *src, QxlHashTable *vm_global_strings);
+    QxlFunction *compile(const char *src, VM *vm);
 
 #ifdef __cplusplus
 }

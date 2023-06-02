@@ -21,7 +21,7 @@ extern "C"
         QxlValue *slots;
     } CallFrame;
 
-    typedef struct
+    typedef struct VM
     {
         CallFrame frames[VM_FRAMES_MAX];
         int frame_count;

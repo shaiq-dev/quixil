@@ -1,5 +1,6 @@
 
 #include "include/vm.h"
+#include "include/builtins.h"
 #include "include/collections.h"
 #include "include/common.h"
 #include "include/compiler.h"
@@ -63,18 +64,22 @@ vm_init()
 {
     VM *vm = calloc(1, sizeof(VM));
     vm_stack_reset(vm);
+    vm->objects = NULL;
     QxlHashTable_init(&vm->strings);
     QxlHashTable_init(&vm->globals);
-    vm->objects = NULL;
+
+    // Load builtins
+    builitins_init(vm);
+
     return vm;
 }
 
 void
 vm_free(VM *vm)
 {
-    // NOT_IMPLEMENTED
-    QxlHashTable_free(&vm->globals);
     QxlHashTable_free(&vm->strings);
+    QxlHashTable_free(&vm->globals);
+    QxlMem_free_objects(vm);
 }
 
 static bool
@@ -109,6 +114,14 @@ call_value(VM *vm, QxlValue callee, int arg_count)
         {
         case OBJ_FUNCTION:
             return call(vm, AS_FUNCTION(callee), arg_count);
+        case OBJ_BUILTIN:
+        {
+            BuiltinFn bltin = AS_BUILTIN_FUNCTION(callee);
+            QxlValue result = bltin(arg_count, vm->stack_top - arg_count);
+            vm->stack_top -= arg_count + 1;
+            vm_stack_push(vm, result);
+            return true;
+        }
         default:
             break; // Non-callable object type
         }
@@ -120,19 +133,20 @@ call_value(VM *vm, QxlValue callee, int arg_count)
 static InterpretResult
 run(VM *vm)
 {
-    CallFrame *frame = &vm->frames[vm->frame_count - 1];
+    CallFrame *frame     = &vm->frames[vm->frame_count - 1];
+    register uint8_t *ip = frame->ip;
 
-#define READ_BYTE() (*frame->ip++)
+#define READ_BYTE() (*ip++)
 #define READ_CONSTANT() (frame->fn->chunk.constants.values[READ_BYTE()])
 #define READ_STRING() AS_STRING(READ_CONSTANT())
-#define READ_SHORT()                                                           \
-    (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
+#define READ_SHORT() (ip += 2, (uint16_t)((ip[-2] << 8) | ip[-1]))
 #define BINARY_OP(value_type, op)                                              \
     do                                                                         \
     {                                                                          \
         if (!IS_NUMBER(STACK_PEEK(0)) || !IS_NUMBER(STACK_PEEK(1)))            \
         {                                                                      \
-            runtime_error(vm, "Operands must be numbers.");                    \
+            frame->ip = ip;                                                    \
+            runtime_error(vm, "operands must be numbers");                     \
             return INTERPRET_RUNTIME_ERROR;                                    \
         }                                                                      \
         double b = AS_NUMBER(vm_stack_pop(vm));                                \
@@ -145,6 +159,7 @@ run(VM *vm)
     {                                                                          \
         if (!IS_NUMBER(STACK_PEEK(0)) || !IS_NUMBER(STACK_PEEK(1)))            \
         {                                                                      \
+            frame->ip = ip;                                                    \
             runtime_error(vm, (error));                                        \
             free(error);                                                       \
             return INTERPRET_RUNTIME_ERROR;                                    \
@@ -205,10 +220,10 @@ run(VM *vm)
             // String concatination
             if (IS_STRING(STACK_PEEK(0)) && IS_STRING(STACK_PEEK(1)))
             {
-                QxlValue b     = vm_stack_pop(vm);
-                QxlValue a     = vm_stack_pop(vm);
-                QxlString *str = QxlString_concatenate(
-                    &vm->strings, AS_STRING(a), AS_STRING(b));
+                QxlValue b = vm_stack_pop(vm);
+                QxlValue a = vm_stack_pop(vm);
+                QxlString *str =
+                    QxlString_concatenate(vm, AS_STRING(a), AS_STRING(b));
                 vm_stack_push(vm, OBJECT_VAL(str));
             }
             else if ((IS_STRING(STACK_PEEK(0)) && IS_NUMBER(STACK_PEEK(1))) ||
@@ -220,22 +235,21 @@ run(VM *vm)
                 {
                     str_op   = vm_stack_pop(vm);
                     char *ds = Qxl_num_as_str(AS_NUMBER(vm_stack_pop(vm)));
-                    num_op   = QxlString_copy(&vm->strings, ds, strlen(ds));
-                    str      = QxlString_concatenate(&vm->strings, num_op,
-                                                     AS_STRING(str_op));
+                    num_op   = QxlString_copy(vm, ds, strlen(ds));
+                    str = QxlString_concatenate(vm, num_op, AS_STRING(str_op));
                 }
                 else
                 {
                     char *ds = Qxl_num_as_str(AS_NUMBER(vm_stack_pop(vm)));
-                    num_op   = QxlString_copy(&vm->strings, ds, strlen(ds));
+                    num_op   = QxlString_copy(vm, ds, strlen(ds));
                     str_op   = vm_stack_pop(vm);
-                    str = QxlString_concatenate(&vm->strings, AS_STRING(str_op),
-                                                num_op);
+                    str = QxlString_concatenate(vm, AS_STRING(str_op), num_op);
                 }
                 vm_stack_push(vm, OBJECT_VAL(str));
             }
             else if (IS_STRING(STACK_PEEK(0)) || IS_STRING(STACK_PEEK(1)))
             {
+                frame->ip = ip;
                 runtime_error(
                     vm,
                     "RuntimeError: Can only concatenate str (not '%s') to str",
@@ -260,11 +274,11 @@ run(VM *vm)
             if (IS_STRING(STACK_PEEK(0)) && IS_NUMBER(STACK_PEEK(1)) ||
                 IS_NUMBER(STACK_PEEK(0)) && IS_STRING(STACK_PEEK(1)))
             {
-                QxlValue l     = vm_stack_pop(vm);
-                QxlValue r     = vm_stack_pop(vm);
-                QxlString *str = QxlString_repeat(
-                    &vm->strings, AS_STRING((IS_OBJECT(l) ? l : r)),
-                    AS_NUMBER(IS_OBJECT(l) ? r : l));
+                QxlValue l = vm_stack_pop(vm);
+                QxlValue r = vm_stack_pop(vm);
+                QxlString *str =
+                    QxlString_repeat(vm, AS_STRING((IS_OBJECT(l) ? l : r)),
+                                     AS_NUMBER(IS_OBJECT(l) ? r : l));
                 vm_stack_push(vm, OBJECT_VAL(str));
             }
             else
@@ -287,7 +301,8 @@ run(VM *vm)
         case OP_NEGATE:
             if (!IS_NUMBER(STACK_PEEK(0)))
             {
-                runtime_error(vm, "Operand must be a number.");
+                frame->ip = ip;
+                runtime_error(vm, "operand must be a number");
                 return INTERPRET_RUNTIME_ERROR;
             }
             vm_stack_push(vm, NUMBER_VAL(-AS_NUMBER(vm_stack_pop(vm))));
@@ -317,6 +332,7 @@ run(VM *vm)
             QxlValue value;
             if (!QxlHashTable_get(&vm->globals, name, &value))
             {
+                frame->ip = ip;
                 runtime_error(vm, "Undefined variable '%s'.", name->chars);
                 return INTERPRET_RUNTIME_ERROR;
             }
@@ -329,6 +345,7 @@ run(VM *vm)
             if (QxlHashTable_put(&vm->globals, name, STACK_PEEK(0)))
             {
                 QxlHashTable_remove(&vm->globals, name);
+                frame->ip = ip;
                 runtime_error(vm, "Undefined variable '%s'.", name->chars);
                 return INTERPRET_RUNTIME_ERROR;
             }
@@ -349,29 +366,31 @@ run(VM *vm)
         case OP_JUMP:
         {
             uint16_t offset = READ_SHORT();
-            frame->ip += offset;
+            ip += offset;
             break;
         }
         case OP_JUMP_IF_FALSE:
         {
             uint16_t offset = READ_SHORT();
-            if (is_falsey(STACK_PEEK(0))) frame->ip += offset;
+            if (is_falsey(STACK_PEEK(0))) ip += offset;
             break;
         }
         case OP_LOOP:
         {
             uint16_t offset = READ_SHORT();
-            frame->ip -= offset;
+            ip -= offset;
             break;
         }
         case OP_CALL:
         {
             int arg_count = READ_BYTE();
+            frame->ip     = ip;
             if (!call_value(vm, STACK_PEEK(arg_count), arg_count))
             {
                 return INTERPRET_RUNTIME_ERROR;
             }
             frame = &vm->frames[vm->frame_count - 1];
+            ip    = frame->ip;
             break;
         }
         case OP_RETURN:
@@ -387,6 +406,7 @@ run(VM *vm)
             vm->stack_top = frame->slots;
             vm_stack_push(vm, result);
             frame = &vm->frames[vm->frame_count - 1];
+            ip    = frame->ip;
             break;
         }
         }
@@ -403,7 +423,7 @@ InterpretResult
 vm_interpret(VM *vm, const char *src)
 {
 
-    QxlFunction *fn = compile(src, &vm->strings);
+    QxlFunction *fn = compile(src, vm);
     if (fn == NULL)
     {
         return INTERPRET_COMPILE_ERROR;

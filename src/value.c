@@ -29,7 +29,7 @@ QxlValueList_push(QxlValueList *list, QxlValue value)
 void
 QxlValueList_free(QxlValueList *list)
 {
-    QxlMem_Free(QxlValue, list->values, list->cap);
+    QxlMem_Free_Array(QxlValue, list->values, list->cap);
     QxlValueList_init(list);
 }
 

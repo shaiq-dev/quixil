@@ -6,6 +6,9 @@
 #include "quixil.h"
 #include "value.h"
 
+// Forward decleration of VM to break the cycle between vm.h and object.h
+typedef struct VM VM;
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -14,14 +17,18 @@ extern "C"
 #define OBJECT_TYPE(value) (AS_OBJECT(value)->type)
 #define IS_STRING(value) is_object_type(value, OBJ_STRING)
 #define IS_FUNCTION(value) is_object_type(value, OBJ_FUNCTION)
+#define IS_BUILTIN(value) is_object_type(value, OBJ_BUILTIN)
 #define AS_STRING(value) ((QxlString *)AS_OBJECT(value))
 #define AS_CSTRING(value) (((QxlString *)AS_OBJECT(value))->chars)
 #define AS_FUNCTION(value) ((QxlFunction *)AS_OBJECT(value))
+#define AS_BUILTIN(value) ((QxlBuiltin *)AS_OBJECT(value))
+#define AS_BUILTIN_FUNCTION(value) (((QxlBuiltin *)AS_OBJECT(value))->fn)
 
     typedef enum
     {
         OBJ_STRING,
-        OBJ_FUNCTION
+        OBJ_FUNCTION,
+        OBJ_BUILTIN
     } QxlObjectType;
 
     struct QxlObject
@@ -47,6 +54,15 @@ extern "C"
         QxlString *name;
     } QxlFunction;
 
+    typedef QxlValue (*BuiltinFn)(int arg_count, QxlValue *args);
+
+    typedef struct
+    {
+        QxlObject obj;
+        BuiltinFn fn;
+        QxlString *name;
+    } QxlBuiltin;
+
     static inline bool
     is_object_type(QxlValue value, QxlObjectType type)
     {
@@ -54,20 +70,12 @@ extern "C"
     }
 
     void QxlObject_print(QxlValue value);
-
-    // String Object
-    QxlString *QxlString_copy(QxlHashTable *vm_global_strings,
-                              const char *chars, int length);
-    QxlString *QxlString_take(QxlHashTable *vm_global_strings, char *chars,
-                              int length);
-
-    QxlString *QxlString_concatenate(QxlHashTable *vm_global_strings,
-                                     QxlString *a, QxlString *b);
-    QxlString *QxlString_repeat(QxlHashTable *vm_global_strings, QxlString *s,
-                                int count);
-
-    //   Function Object
-    QxlFunction *QxlFunction_new();
+    QxlString *QxlString_copy(VM *vm, const char *chars, int length);
+    QxlString *QxlString_take(VM *vm, char *chars, int length);
+    QxlString *QxlString_concatenate(VM *vm, QxlString *a, QxlString *b);
+    QxlString *QxlString_repeat(VM *vm, QxlString *s, int count);
+    QxlFunction *QxlFunction_new(VM *vm);
+    QxlBuiltin *QxlBuiltin_new(VM *vm, QxlString *name, BuiltinFn fn);
 
 #ifdef __cplusplus
 }

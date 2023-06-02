@@ -64,7 +64,9 @@ static void
 Qxl_run_vm(const char *path)
 {
     char *buf           = Qxl_read_source(path);
-    InterpretResult res = vm_interpret(vm_init(), buf);
+    VM *vm              = vm_init();
+    InterpretResult res = vm_interpret(vm, buf);
+    vm_free(vm);
     free(buf);
 
     Qxl_INTERCEPT_ERROR(res, INTERPRET_COMPILE_ERROR, 65);

@@ -57,7 +57,7 @@ adjust_cap(QxlHashTable *t, int cap)
         t->count++;
     }
 
-    QxlMem_Free(HashTableEntry, t->entries, t->cap);
+    QxlMem_Free_Array(HashTableEntry, t->entries, t->cap);
 
     t->entries = entries;
     t->cap     = cap;
@@ -74,7 +74,7 @@ QxlHashTable_init(QxlHashTable *t)
 void
 QxlHashTable_free(QxlHashTable *t)
 {
-    QxlMem_Free(HashTableEntry, t->entries, t->cap);
+    QxlMem_Free_Array(HashTableEntry, t->entries, t->cap);
     QxlHashTable_init(t);
 }
 
