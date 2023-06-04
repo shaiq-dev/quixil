@@ -117,7 +117,7 @@ call_value(VM *vm, QxlValue callee, int arg_count)
         case OBJ_BUILTIN:
         {
             BuiltinFn bltin = AS_BUILTIN_FUNCTION(callee);
-            QxlValue result = bltin(arg_count, vm->stack_top - arg_count);
+            QxlValue result = bltin(vm, arg_count, vm->stack_top - arg_count);
             vm->stack_top -= arg_count + 1;
             vm_stack_push(vm, result);
             return true;
