@@ -1,33 +1,20 @@
 #include "include/builtins.h"
+#include "include/common.h"
 #include "include/object.h"
 #include "include/quixil.h"
+#include "include/value.h"
 
 typedef struct VM VM;
 
-#include <time.h>
-
 #define BUILTIN(name)                                                          \
-    static QxlValue builtin_##name(VM *vm, int arg_count, QxlValue *args)
-
+    static bool builtin_##name(VM *vm, int arg_count, QxlValue *args)
 #define ADD_BUILTIN(name) Qxl_add_builtin(vm, #name, builtin_##name)
-
-#define Qxl_CONSOLE_DISABLE_ECHO()                                             \
-    do                                                                         \
-    {                                                                          \
-        struct termios term;                                                   \
-        tcgetattr(STDIN_FILENO, &term);                                        \
-        term.c_lflag &= ~ECHO;                                                 \
-        tcsetattr(STDIN_FILENO, TCSANOW, &term);                               \
-    } while (0)
-
-#define Qxl_CONSOLE_ENABLE_ECHO()                                              \
-    do                                                                         \
-    {                                                                          \
-        struct termios term;                                                   \
-        tcgetattr(STDIN_FILENO, &term);                                        \
-        term.c_lflag |= ECHO;                                                  \
-        tcsetattr(STDIN_FILENO, TCSANOW, &term);                               \
-    } while (0)
+#define VALIDATE_ARGS(arg_count, req_count, has_default)                       \
+    ((arg_count == 0 && has_default) || (arg_count == req_count))
+#define ARGS_ERROR(name, req_count)                                            \
+    char *err = Qxl_fstr("%s() takes exactly %d arguments (%d given)", name,   \
+                         req_count, arg_count);                                \
+    args[-1]  = OBJECT_VAL(QxlString_copy(vm, err, strlen(err)));
 
 /*
     clock as builtin_clock
@@ -36,7 +23,8 @@ typedef struct VM VM;
 */
 BUILTIN(clock)
 {
-    return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+    args[-1] = NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+    return true;
 }
 
 /*
@@ -46,21 +34,34 @@ BUILTIN(clock)
 
     Read a string from standard input. The trailing newline is stripped.
     The prompt string, if given, is printed to standard output without a
-    trailing newline before reading input.
+    trailing newline before reading input. Echoing to console is disabled
+    if hidden is true.
 */
 BUILTIN(input)
 {
-    const char *prompt = "Enter a string : ";
-    bool hidden        = true;
+    if (!VALIDATE_ARGS(arg_count, 2, true))
+    {
+        ARGS_ERROR("input", 2);
+        return false;
+    }
+
+    char *prompt = NULL;
+    bool hidden  = false;
+
+    if (arg_count == 2)
+    {
+        prompt = AS_STRING(args[0])->chars;
+        hidden = AS_BOOL(args[1]);
+    }
 
     if (!isatty(STDIN_FILENO))
     {
-        // TODO: handle later
+        // TODO: stdin not available
     }
 
     if (!isatty(STDOUT_FILENO))
     {
-        // TODO: handle later
+        // TODO: stdout not available
     }
 
     if (prompt != NULL)
@@ -75,6 +76,7 @@ BUILTIN(input)
 
     if (hidden)
     {
+        // Windows platform or DOS specfic implementation
 #ifdef _WIN32
         int i   = 0;
         char ch = 0;
@@ -103,7 +105,12 @@ BUILTIN(input)
         printf("\n");
 #else
         // UNIX platform specific implementation
-        Qxl_CONSOLE_DISABLE_ECHO();
+        struct termios term;
+        tcgetattr(STDIN_FILENO, &term);
+
+        // Disable echo
+        term.c_lflag &= ~ECHO;
+        tcsetattr(STDIN_FILENO, TCSANOW, &term);
         while (1)
         {
             int c = getchar();
@@ -126,7 +133,9 @@ BUILTIN(input)
                 }
             }
         }
-        Qxl_CONSOLE_ENABLE_ECHO();
+        // Enable echo
+        term.c_lflag |= ECHO;
+        tcsetattr(STDIN_FILENO, TCSANOW, &term);
         printf("\n");
 #endif
     }
@@ -143,8 +152,9 @@ BUILTIN(input)
         }
     }
 
-    input = realloc(input, sizeof(char) * (length + 1));
-    return OBJECT_VAL(QxlString_copy(vm, input, length));
+    input    = realloc(input, sizeof(char) * (length + 1));
+    args[-1] = OBJECT_VAL(QxlString_copy(vm, input, length));
+    return true;
 }
 
 static void
@@ -159,7 +169,7 @@ Qxl_add_builtin(VM *vm, const char *name, BuiltinFn fn)
 }
 
 void
-builitins_init(VM *vm)
+builtins_init(VM *vm)
 {
     ADD_BUILTIN(clock);
     ADD_BUILTIN(input);

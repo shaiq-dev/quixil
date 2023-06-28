@@ -10,7 +10,7 @@ extern "C"
 {
 #endif
 
-    void builitins_init(VM *vm);
+    void builtins_init(VM *vm);
 
 #ifdef __cplusplus
 }
