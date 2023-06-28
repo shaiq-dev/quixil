@@ -69,7 +69,7 @@ vm_init()
     QxlHashTable_init(&vm->globals);
 
     // Load builtins
-    builitins_init(vm);
+    builtins_init(vm);
 
     return vm;
 }
@@ -117,10 +117,21 @@ call_value(VM *vm, QxlValue callee, int arg_count)
         case OBJ_BUILTIN:
         {
             BuiltinFn bltin = AS_BUILTIN_FUNCTION(callee);
-            QxlValue result = bltin(vm, arg_count, vm->stack_top - arg_count);
-            vm->stack_top -= arg_count + 1;
-            vm_stack_push(vm, result);
-            return true;
+            if (bltin(vm, arg_count, vm->stack_top - arg_count))
+            {
+                vm->stack_top -= arg_count;
+                return true;
+            }
+            else
+            {
+                runtime_error(vm,
+                              AS_STRING(vm->stack_top[-arg_count - 1])->chars);
+                return false;
+            }
+
+            // QxlValue result = bltin(vm, arg_count, vm->stack_top -
+            // arg_count); vm->stack_top -= arg_count + 1; vm_stack_push(vm,
+            // result); return true;
         }
         default:
             break; // Non-callable object type

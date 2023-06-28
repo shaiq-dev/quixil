@@ -54,7 +54,7 @@ extern "C"
         QxlString *name;
     } QxlFunction;
 
-    typedef QxlValue (*BuiltinFn)(VM *vm, int arg_count, QxlValue *args);
+    typedef bool (*BuiltinFn)(VM *vm, int arg_count, QxlValue *args);
 
     typedef struct
     {
